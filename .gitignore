@@ -1,0 +1,12 @@
+.rocketride/
+.claude/
+backend/.env
+backend/data/
+backend/__pycache__/
+backend/ingest/__pycache__/
+backend/scoring/__pycache__/
+backend/routes/__pycache__/
+frontend/node_modules/
+frontend/.env
+frontend/dist/
+*.pyc

@@ -22,6 +22,21 @@ Two independent data streams are cross-validated to produce a succession risk sc
 
 A business with 20+ years of operation, declining review velocity, stale digital presence, and a lease expiring in 18 months scores as high succession risk. Neither stream alone tells you that. Together they do.
 
+## Risk Scoring Model
+
+Each business receives a succession risk score from 0–100 built from weighted signals across both streams. The score is fully auditable — every business detail view shows exactly which signals fired and how much each contributed.
+
+| Signal | Weight | High Risk Threshold |
+|---|---|---|
+| Years in operation | 25% | 15+ years |
+| Months until lease expires | 20% | < 18 months |
+| Review frequency decline (YoY) | 20% | > 30% drop |
+| Website last updated | 15% | > 2 years ago |
+| No SBA program enrollment | 10% | not enrolled |
+| Owner occupied vs. renting | 10% | renting |
+
+Scores above 70 are flagged as high risk. Weights are adjustable and will be calibrated against ground-truth data collected by on-the-ground canvassers.
+
 ## What It Produces
 
 A Mapbox choropleth of Fremont colored by succession risk score. Click any business to see:

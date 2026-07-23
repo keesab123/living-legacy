@@ -33,10 +33,10 @@ function SignalBar({ name, value }) {
     <div style={{ marginBottom: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
         <span>{name}</span>
-        <span style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--ink-soft)' }}>{Math.round(value * 100)}</span>
+        <span className="font-mono" style={{ fontSize: 11.5, color: 'var(--ink-soft)' }}>{Math.round(value * 100)}</span>
       </div>
       <div style={{ height: 3, background: 'var(--paper-dim)' }}>
-        <div style={{ height: '100%', width: `${value * 100}%`, background: color }} />
+        <div style={{ height: '100%', width: `${value * 100}%`, background: color, transition: 'width 0.5s ease' }} />
       </div>
     </div>
   )
@@ -52,6 +52,9 @@ export default function App() {
   const [briefLoading, setBriefLoading] = useState(false)
   const [businesses, setBusinesses] = useState([])
   const [stats, setStats] = useState(null)
+  const [clusters, setClusters] = useState([])
+  const [hotspotsOn, setHotspotsOn] = useState(false)
+  const [selectedCluster, setSelectedCluster] = useState(null)
 
   useEffect(() => {
     fetch(`${API_BASE}/businesses?limit=1000`)
@@ -60,6 +63,9 @@ export default function App() {
     fetch(`${API_BASE}/stats`)
       .then(r => r.json())
       .then(setStats)
+    fetch(`${API_BASE}/risk-clusters?tier=high`)
+      .then(r => r.json())
+      .then(d => setClusters(d.clusters))
   }, [])
 
   const selectBusiness = (props) => {
@@ -171,8 +177,84 @@ export default function App() {
       map.current.on('mouseleave', 'businesses-circles', () => {
         map.current.getCanvas().style.cursor = ''
       })
+
+      // Risk hotspots — real DBSCAN clusters computed server-side, not a
+      // decorative heatmap gradient. Populated once /api/risk-clusters
+      // resolves; starts empty and hidden until the sidebar toggle is on.
+      map.current.addSource('risk-clusters', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
+      map.current.addLayer({
+        id: 'risk-clusters-circles',
+        type: 'circle',
+        source: 'risk-clusters',
+        layout: { visibility: 'none' },
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['get', 'business_count'], 3, 22, 21, 60],
+          'circle-color': '#9b8cd6',
+          'circle-opacity': 0.22,
+          'circle-stroke-width': 1.5,
+          'circle-stroke-color': '#9b8cd6',
+          'circle-stroke-opacity': 0.7,
+        },
+      })
+      map.current.addLayer({
+        id: 'risk-clusters-label',
+        type: 'symbol',
+        source: 'risk-clusters',
+        layout: {
+          visibility: 'none',
+          'text-field': ['get', 'business_count'],
+          'text-size': 14,
+          'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+        },
+        paint: { 'text-color': '#fbf9f4' },
+      })
+
+      map.current.on('click', 'risk-clusters-circles', e => {
+        // Mapbox GL stringifies nested object/array properties on GeoJSON
+        // sources (businesses is a list of {name, address, risk_score}) — parse it back.
+        const props = e.features[0].properties
+        setSelectedCluster({
+          ...props,
+          businesses: typeof props.businesses === 'string' ? JSON.parse(props.businesses) : props.businesses,
+        })
+      })
+      map.current.on('mouseenter', 'risk-clusters-circles', () => {
+        map.current.getCanvas().style.cursor = 'pointer'
+      })
+      map.current.on('mouseleave', 'risk-clusters-circles', () => {
+        map.current.getCanvas().style.cursor = ''
+      })
     })
   }, [businesses])
+
+  // Feed the risk-clusters source once both the map and the fetched
+  // clusters are ready — they resolve independently and in either order.
+  useEffect(() => {
+    if (!map.current || !clusters.length) return
+    const setData = () => {
+      map.current.getSource('risk-clusters')?.setData({
+        type: 'FeatureCollection',
+        features: clusters.map(c => ({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [c.centroid_lng, c.centroid_lat] },
+          properties: c,
+        })),
+      })
+    }
+    if (map.current.isStyleLoaded()) setData()
+    else map.current.once('load', setData)
+  }, [clusters])
+
+  useEffect(() => {
+    if (!map.current) return
+    const visibility = hotspotsOn ? 'visible' : 'none'
+    const apply = () => {
+      map.current.setLayoutProperty('risk-clusters-circles', 'visibility', visibility)
+      map.current.setLayoutProperty('risk-clusters-label', 'visibility', visibility)
+    }
+    if (map.current.getLayer('risk-clusters-circles')) apply()
+    else map.current.once('load', apply)
+  }, [hotspotsOn])
 
   return (
     <div className="app-shell" style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', padding: 10, gap: 10, background: 'var(--bg)' }}>
@@ -201,20 +283,30 @@ export default function App() {
                 An estimated {stats.estimated_jobs_at_risk.toLocaleString()} jobs and ${(stats.estimated_annual_revenue_at_risk / 1_000_000).toFixed(0)}M
                 in annual revenue could disappear without intervention.
               </div>
-              <div style={{ fontSize: 9.5, color: 'var(--cream-soft)', opacity: 0.7, marginTop: 6, fontStyle: 'italic' }}>
+              <div style={{ fontSize: 10.5, color: 'var(--cream-soft)', opacity: 0.75, marginTop: 6, fontStyle: 'italic', lineHeight: 1.4 }}>
                 Estimate based on national small-restaurant averages, not per-business figures.
               </div>
             </div>
           )}
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto' }}>
+        <div className="sidebar-scroll" style={{ flex: 1, overflowY: 'auto' }}>
+          {businesses.length === 0 && Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 22px', borderBottom: '1px solid var(--sidebar-rule)' }}>
+              <div className="skeleton" style={{ width: 40, height: 40, borderRadius: 2, flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <div className="skeleton" style={{ height: 12, width: `${60 + (i % 3) * 10}%`, borderRadius: 2 }} />
+                <div className="skeleton" style={{ height: 10, width: '40%', borderRadius: 2, marginTop: 6 }} />
+              </div>
+            </div>
+          ))}
           {businesses.map(b => {
             const isSelected = selected && selected.name === b.name
             return (
               <button
-                key={b.name}
+                key={`${b.name}-${b.address}`}
                 onClick={() => selectBusiness(b)}
+                className="biz-row"
                 style={{
                   display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left',
                   background: isSelected ? 'rgba(155,140,214,0.14)' : 'transparent',
@@ -222,7 +314,7 @@ export default function App() {
                   border: 'none', borderBottom: '1px solid var(--sidebar-rule)',
                   cursor: 'pointer', padding: '10px 22px',
                   opacity: selected && !isSelected ? 0.42 : 1,
-                  transition: 'opacity 0.2s ease, background 0.2s ease',
+                  transition: 'opacity 0.2s ease, background 0.15s ease',
                 }}
               >
                 <img
@@ -230,7 +322,8 @@ export default function App() {
                   alt=""
                   loading="lazy"
                   onError={e => { e.target.style.visibility = 'hidden' }}
-                  style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 2, flexShrink: 0, background: 'var(--paper-dim)' }}
+                  onLoad={e => { e.target.style.opacity = 1 }}
+                  style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 2, flexShrink: 0, background: 'var(--paper-dim)', opacity: 0 }}
                 />
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
@@ -243,7 +336,7 @@ export default function App() {
                       padding: '3px 8px 3px 6px',
                     }}>
                       <span style={{ width: 6, height: 6, borderRadius: '50%', background: TIER_COLOR[b.risk_tier], flexShrink: 0 }} />
-                      <span style={{ fontSize: 11.5, fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: 'var(--cream)' }}>{Math.round(b.risk_score)}</span>
+                      <span className="font-mono" style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--cream)' }}>{Math.round(b.risk_score)}</span>
                     </span>
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--cream-soft)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.address}</div>
@@ -263,6 +356,35 @@ export default function App() {
               </div>
             ))}
           </div>
+          <button
+            onClick={() => setHotspotsOn(v => !v)}
+            className="ghost-btn hotspot-toggle"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, width: '100%', marginTop: 14,
+              background: hotspotsOn ? 'rgba(155,140,214,0.16)' : 'transparent',
+              borderColor: hotspotsOn ? 'var(--lavender)' : 'var(--sidebar-rule)',
+              color: 'var(--cream)', fontSize: 12, fontWeight: 600,
+              padding: '9px 10px', borderRadius: 2,
+            }}
+          >
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#9b8cd6', flexShrink: 0 }} />
+            {hotspotsOn ? 'Hide' : 'Show'} risk hotspot corridors
+            {clusters.length > 0 && (
+              <span className="font-mono" style={{ marginLeft: 'auto', color: 'var(--cream-soft)', fontWeight: 500 }}>{clusters.length}</span>
+            )}
+          </button>
+          <a
+            href="/top-at-risk"
+            target="_blank"
+            rel="noreferrer"
+            className="top-link"
+            style={{
+              display: 'block', marginTop: 12, fontSize: 11.5, fontWeight: 600,
+              color: 'var(--lavender)', textDecoration: 'none', letterSpacing: '0.02em',
+            }}
+          >
+            View shareable Top 10 <span className="top-link-arrow">→</span>
+          </a>
         </div>
       </div>
 
@@ -274,7 +396,7 @@ export default function App() {
         <div ref={mapSlotRef} className="no-print" style={{ position: 'absolute', inset: 0 }} />
 
         {selected && (
-          <div className="app-dossier-overlay" style={{ position: 'absolute', inset: 0, overflowY: 'auto', zIndex: 3, background: 'var(--paper)' }}>
+          <div className="app-dossier-overlay paper-scroll fade-in" style={{ position: 'absolute', inset: 0, overflowY: 'auto', zIndex: 3, background: 'var(--paper)' }}>
             {selected.name && (
               <div className="no-print" style={{ position: 'relative', height: 220, background: 'var(--paper-dim)' }}>
                 <img
@@ -303,6 +425,7 @@ export default function App() {
                   )}
                   <button
                     onClick={() => { setSelected(null); setBrief(null) }}
+                    className="solid-btn"
                     style={{
                       background: 'var(--lavender)', border: 'none', cursor: 'pointer',
                       color: '#1c1a22', fontWeight: 700, fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase',
@@ -414,6 +537,47 @@ export default function App() {
                   Dossier unavailable for this record.
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {!selected && selectedCluster && (
+          <div className="no-print fade-up" style={{
+            position: 'absolute', left: 20, bottom: 20, width: 340, maxHeight: '70%',
+            background: 'var(--paper)', borderRadius: 3, boxShadow: '0 10px 34px rgba(0,0,0,0.45)',
+            zIndex: 3, display: 'flex', flexDirection: 'column', overflow: 'hidden',
+          }}>
+            <div style={{ padding: '16px 18px', borderBottom: '2px solid var(--lavender)', flexShrink: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <div style={label}>Risk Hotspot Corridor</div>
+                  <div className="font-display" style={{ fontSize: 20, fontWeight: 600, marginTop: 4 }}>
+                    {selectedCluster.business_count} businesses
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedCluster(null)}
+                  className="ghost-btn"
+                  style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '5px 9px', borderRadius: 2 }}
+                >
+                  Close
+                </button>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 8, lineHeight: 1.5 }}>
+                Avg risk score {selectedCluster.avg_risk_score} · an estimated {selectedCluster.estimated_jobs_at_risk} jobs
+                and ${(selectedCluster.estimated_annual_revenue_at_risk / 1_000_000).toFixed(1)}M/yr concentrated within a short walk.
+              </div>
+            </div>
+            <div className="paper-scroll" style={{ overflowY: 'auto', padding: '4px 18px' }}>
+              {selectedCluster.businesses.map(b => (
+                <div key={`${b.name}-${b.address}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '9px 0', borderTop: '1px solid var(--rule)' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.name}</div>
+                    <div style={{ fontSize: 10.5, color: 'var(--ink-soft)', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.address}</div>
+                  </div>
+                  <div className="font-mono" style={{ fontSize: 13, fontWeight: 700, color: TIER_COLOR.high, flexShrink: 0 }}>{Math.round(b.risk_score)}</div>
+                </div>
+              ))}
             </div>
           </div>
         )}

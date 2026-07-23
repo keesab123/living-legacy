@@ -457,32 +457,32 @@ export default function App() {
                 </button>
               </div>
 
-              <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', paddingRight: 96 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="font-display" style={{ fontSize: 30, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.15 }}>
-                    {selected.name}
-                  </div>
-                  <div style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 6 }}>{selected.address}</div>
-                </div>
+              <div style={{ display: 'flex', gap: 22, alignItems: 'center' }}>
                 {selected.name && (
                   <button
                     className="no-print photo-thumb"
                     onClick={() => setPhotoOpen(true)}
                     aria-label="Enlarge photo"
                     style={{
-                      width: 84, height: 84, flexShrink: 0, padding: 0, cursor: 'zoom-in',
-                      border: '4px solid #fff8ea', boxShadow: '0 6px 14px rgba(0,0,0,0.35)',
-                      transform: 'rotate(4deg)', background: 'none',
+                      width: 118, height: 118, flexShrink: 0, padding: 0, cursor: 'zoom-in',
+                      border: '5px solid #fff8ea', boxShadow: '0 8px 18px rgba(0,0,0,0.35)',
+                      transform: 'rotate(-3deg)', background: 'none',
                     }}
                   >
                     <img
-                      src={photoUrl(selected.name, 240)}
+                      src={photoUrl(selected.name, 300)}
                       alt=""
                       onError={e => { e.target.closest('button').style.visibility = 'hidden' }}
                       style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                     />
                   </button>
                 )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="font-display" style={{ fontSize: 30, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.15 }}>
+                    {selected.name}
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 6 }}>{selected.address}</div>
+                </div>
               </div>
 
               <div style={{

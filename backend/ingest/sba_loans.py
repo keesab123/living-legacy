@@ -16,7 +16,9 @@ def fetch() -> pd.DataFrame:
         df = pd.read_csv(f, low_memory=False)
         dfs.append(df)
     combined = pd.concat(dfs, ignore_index=True)
-    return combined[combined["BorrCity"].str.upper().str.strip() == "FREMONT"]
+    is_fremont = combined["BorrCity"].str.upper().str.strip() == "FREMONT"
+    is_ca = combined["BorrState"].str.upper().str.strip() == "CA"
+    return combined[is_fremont & is_ca]
 
 
 def clean(df: pd.DataFrame) -> pd.DataFrame:

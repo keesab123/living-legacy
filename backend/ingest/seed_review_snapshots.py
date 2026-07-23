@@ -19,11 +19,18 @@ PRIOR_DATE = (datetime.now() - timedelta(days=380)).date().isoformat()
 
 
 def seed():
+    # Prefer the enriched license dataset (the actual set of businesses that get
+    # scored) over the raw nearby-search sample, so the seeded snapshot covers
+    # every business the scorer will look up a prior count for.
+    enriched_file = RAW_DIR / "licenses_enriched.csv"
     places_file = RAW_DIR / "google_places_raw.csv"
-    if not places_file.exists():
-        raise FileNotFoundError("Run google_places.run() first to generate google_places_raw.csv")
+    source_file = enriched_file if enriched_file.exists() else places_file
+    if not source_file.exists():
+        raise FileNotFoundError("Run enrich_places.run() or google_places.run() first")
 
-    df = pd.read_csv(places_file)
+    df = pd.read_csv(source_file)
+    if "user_ratings_total" not in df.columns and "review_count_current" in df.columns:
+        df = df.rename(columns={"review_count_current": "user_ratings_total"})
     df = df[["name", "address", "user_ratings_total", "rating"]].dropna(subset=["user_ratings_total"])
 
     np.random.seed(42)

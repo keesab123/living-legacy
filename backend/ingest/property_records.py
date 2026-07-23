@@ -5,41 +5,64 @@ from pathlib import Path
 RAW_DIR = Path(__file__).parent.parent / "data" / "raw"
 RAW_DIR.mkdir(parents=True, exist_ok=True)
 
-# TODO: replace with Alameda County Assessor endpoint or downloaded file
-DATA_SOURCE = None  # e.g. Alameda County open data or a bulk CSV export
+# Alameda County Assessor parcel service (ArcGIS FeatureServer/MapServer query endpoint).
+# Fill in with the verified layer URL, e.g.:
+#   "https://<host>/arcgis/rest/services/<folder>/ParcelsAPNs/MapServer/0"
+DATA_SOURCE = None
+
+QUERY_PARAMS = {
+    "where": "1=1",
+    "outFields": "*",
+    "f": "json",
+}
 
 
 def fetch() -> pd.DataFrame:
     if DATA_SOURCE is None:
-        raise NotImplementedError("Set DATA_SOURCE to the Alameda County property records endpoint or file path")
+        raise NotImplementedError("Set DATA_SOURCE to the Alameda County Assessor parcel layer URL")
 
-    if DATA_SOURCE.startswith("http"):
-        response = httpx.get(DATA_SOURCE, params={"$limit": 50000})
-        response.raise_for_status()
-        df = pd.DataFrame(response.json())
-    else:
-        df = pd.read_csv(DATA_SOURCE)
+    response = httpx.get(f"{DATA_SOURCE}/query", params=QUERY_PARAMS, timeout=60)
+    response.raise_for_status()
+    data = response.json()
+    features = data.get("features", [])
+    return pd.DataFrame([f["attributes"] for f in features])
 
-    return df
+
+def _normalize_address(series: pd.Series) -> pd.Series:
+    return (
+        series.astype(str)
+        .str.upper()
+        .str.replace(r"[.,]", "", regex=True)
+        .str.replace(r"\s+", " ", regex=True)
+        .str.strip()
+    )
 
 
 def clean(df: pd.DataFrame) -> pd.DataFrame:
-    # TODO: map actual column names from the source
+    # TODO: confirm actual field names once DATA_SOURCE is wired up — these are
+    # the typical names on county assessor parcel layers.
     column_map = {
-        "parcel_number": "parcel_id",
-        "situs_address": "address",
-        "owner_name": "owner",
-        "lease_expiration": "lease_expires",
-        "owner_occupied": "owner_occupied",
-        "assessed_value": "assessed_value",
+        "APN": "parcel_id",
+        "SITUS_ADDRESS": "address",
+        "OWNER_NAME": "owner",
+        "OWNER_ADDRESS": "owner_mailing_address",
+        "ASSESSED_VALUE": "assessed_value",
     }
     df = df.rename(columns={k: v for k, v in column_map.items() if k in df.columns})
 
-    if "lease_expires" in df.columns:
-        df["lease_expires"] = pd.to_datetime(df["lease_expires"], errors="coerce")
-        df["months_until_lease_expires"] = (
-            (df["lease_expires"] - pd.Timestamp.now()).dt.days / 30
-        ).clip(lower=0)
+    # Proxy for owner-occupied vs. rented: if the assessed owner's mailing
+    # address matches the property (situs) address, the owner runs the
+    # business out of a property they own. A mismatch means the parcel is
+    # owned by someone else (a landlord) and the business is a tenant.
+    # This is a proxy, not a direct signal — county rolls don't publish
+    # private commercial lease terms, so lease_expires/months_until_lease_expires
+    # stay unavailable from this source.
+    if "address" in df.columns and "owner_mailing_address" in df.columns:
+        situs_norm = _normalize_address(df["address"])
+        owner_norm = _normalize_address(df["owner_mailing_address"])
+        df["owner_occupied"] = situs_norm == owner_norm
+    else:
+        df["owner_occupied"] = pd.NA
 
     return df
 

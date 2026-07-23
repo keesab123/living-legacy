@@ -1,4 +1,4 @@
-# Living Legacy
+# Handoff
 
 An early warning system for immigrant-owned small business succession gaps in Fremont, CA.
 
@@ -65,7 +65,7 @@ A Mapbox choropleth of Fremont colored by succession risk score. Click any busin
 
 ## Congressional Angle
 
-Small business succession is an active policy gap. The SBA has transition programs almost nobody uses because at-risk businesses are never surfaced in time. Living Legacy demonstrates what's possible when cities use their own public data to protect their economic fabric before it disappears — and makes the case for federal investment in proactive succession infrastructure.
+Small business succession is an active policy gap. The SBA has transition programs almost nobody uses because at-risk businesses are never surfaced in time. Handoff demonstrates what's possible when cities use their own public data to protect their economic fabric before it disappears — and makes the case for federal investment in proactive succession infrastructure.
 
 ## Stack (Planned)
 

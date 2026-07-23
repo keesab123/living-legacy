@@ -44,6 +44,9 @@ CHAIN_KEYWORDS = {
     "@ oracle", "@ google", "@ stryker", "@ net.com",
     # Hotel chains
     "courtyard", "hampton inn", "residence inn",
+    # Convenience / grocery chains
+    "7-eleven", "7 eleven", "circle k", "safeway", "trader joe", "whole foods",
+    "walgreens", "cvs pharmacy", "target", "walmart", "costco",
 }
 
 

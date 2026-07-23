@@ -76,14 +76,10 @@ def run() -> pd.DataFrame:
         ~cleaned["address"].str.contains("ON FILE", case=False, na=False)
     ]
 
-    # Keep active licenses OR long-running businesses (15+ years) even if now closed
-    cleaned = cleaned[
-        (cleaned["license_expires"] >= "2020-01-01") |
-        (cleaned["years_in_operation"] >= 15)
-    ]
-
-    # At least 15 years in operation
-    cleaned = cleaned[cleaned["years_in_operation"] >= 15]
+    # Remove businesses open less than 5 years — young businesses are
+    # unlikely near-term succession risks, and this keeps the dataset
+    # focused on established businesses this product targets.
+    cleaned = cleaned[cleaned["years_in_operation"] >= 5]
 
     # Deduplicate — keep most recent license per address+name combo
     cleaned = cleaned.sort_values("license_issued", ascending=False)

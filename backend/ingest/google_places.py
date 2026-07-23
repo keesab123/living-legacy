@@ -82,6 +82,7 @@ def search_restaurants() -> list[dict]:
 def clean(records: list[dict]) -> pd.DataFrame:
     rows = []
     for r in records:
+        photos = r.get("photos") or []
         rows.append({
             "place_id": r.get("place_id"),
             "name": r.get("name"),
@@ -91,6 +92,7 @@ def clean(records: list[dict]) -> pd.DataFrame:
             "business_status": r.get("business_status"),
             "lat": r.get("geometry", {}).get("location", {}).get("lat"),
             "lng": r.get("geometry", {}).get("location", {}).get("lng"),
+            "photo_reference": photos[0].get("photo_reference") if photos else None,
         })
     return pd.DataFrame(rows)
 

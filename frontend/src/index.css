@@ -372,13 +372,31 @@ html, body {
   margin-top: 2px;
 }
 
-/* a faint coffee-ring stain in the dossier corner — a small bit of
-   texture/character that has no function, purely atmosphere */
-.coffee-ring {
-  position: absolute;
-  top: 18px; right: 26px;
-  width: 84px; height: 84px;
-  border-radius: 50%;
-  border: 6px solid rgba(122, 67, 32, 0.07);
-  pointer-events: none;
+.photo-thumb {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.photo-thumb:hover {
+  transform: rotate(4deg) scale(1.05) !important;
+  box-shadow: 0 10px 22px rgba(0,0,0,0.4) !important;
+}
+
+/* click-to-enlarge overlay for the dossier photo */
+.photo-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(20, 16, 10, 0.86);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+  padding: 40px;
+}
+.photo-lightbox img {
+  max-width: min(900px, 100%);
+  max-height: 100%;
+  object-fit: contain;
+  border: 6px solid #fff8ea;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+  cursor: default;
 }

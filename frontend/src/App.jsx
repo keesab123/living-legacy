@@ -208,6 +208,7 @@ export default function App() {
   const [hotspotsOn, setHotspotsOn] = useState(false)
   const [selectedCluster, setSelectedCluster] = useState(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [photoOpen, setPhotoOpen] = useState(false)
 
   useEffect(() => {
     fetch(`${API_BASE}/businesses?limit=1000`)
@@ -225,6 +226,7 @@ export default function App() {
     setSelected(props)
     setBrief(null)
     setBriefLoading(true)
+    setPhotoOpen(false)
     fetch(`${API_BASE}/businesses/brief?name=${encodeURIComponent(props.name)}`)
       .then(r => { if (!r.ok) throw new Error('not found'); return r.json() })
       .then(setBrief)
@@ -547,8 +549,6 @@ export default function App() {
             </div>
 
             <div id="dossier-print-root" style={{ padding: '18px 32px 48px', position: 'relative' }}>
-              <div className="coffee-ring no-print" />
-
               <div className="no-print" style={{ position: 'absolute', top: -30, right: 32, display: 'flex', gap: 8 }}>
                 {brief && !brief.error && (
                   <button
@@ -564,7 +564,7 @@ export default function App() {
                   </button>
                 )}
                 <button
-                  onClick={() => { setSelected(null); setBrief(null) }}
+                  onClick={() => { setSelected(null); setBrief(null); setPhotoOpen(false) }}
                   className="solid-btn"
                   style={{
                     background: 'var(--stamp-red)', border: 'none', cursor: 'pointer',
@@ -576,26 +576,32 @@ export default function App() {
                 </button>
               </div>
 
-              <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', paddingRight: 96 }}>
+              <div style={{ display: 'flex', gap: 22, alignItems: 'center' }}>
+                {selected.name && (
+                  <button
+                    className="no-print photo-thumb"
+                    onClick={() => setPhotoOpen(true)}
+                    aria-label="Enlarge photo"
+                    style={{
+                      width: 118, height: 118, flexShrink: 0, padding: 0, cursor: 'zoom-in',
+                      border: '5px solid #fff8ea', boxShadow: '0 8px 18px rgba(0,0,0,0.35)',
+                      transform: 'rotate(-3deg)', background: 'none',
+                    }}
+                  >
+                    <img
+                      src={photoUrl(selected.name, 300)}
+                      alt=""
+                      onError={e => { e.target.closest('button').style.visibility = 'hidden' }}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                    />
+                  </button>
+                )}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="font-display" style={{ fontSize: 30, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.15 }}>
                     {selected.name}
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 6 }}>{selected.address}</div>
                 </div>
-                {selected.name && (
-                  <img
-                    className="no-print"
-                    src={photoUrl(selected.name, 240)}
-                    alt=""
-                    onError={e => { e.target.style.visibility = 'hidden' }}
-                    style={{
-                      width: 84, height: 84, objectFit: 'cover', flexShrink: 0,
-                      border: '4px solid #fff8ea', boxShadow: '0 6px 14px rgba(0,0,0,0.35)',
-                      transform: 'rotate(4deg)',
-                    }}
-                  />
-                )}
               </div>
 
               <div style={{
@@ -726,6 +732,28 @@ export default function App() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Photo lightbox — click the dossier's rotated photo to enlarge it */}
+      {photoOpen && selected?.name && (
+        <div
+          className="no-print photo-lightbox fade-in"
+          onClick={() => setPhotoOpen(false)}
+        >
+          <img src={photoUrl(selected.name, 1200)} alt="" onClick={e => e.stopPropagation()} />
+          <button
+            className="ghost-btn"
+            onClick={() => setPhotoOpen(false)}
+            style={{
+              position: 'absolute', top: 24, right: 24,
+              color: 'var(--cream)', fontWeight: 700, fontSize: 11,
+              letterSpacing: '0.08em', textTransform: 'uppercase',
+              padding: '8px 14px', borderRadius: 4,
+            }}
+          >
+            Close
+          </button>
         </div>
       )}
     </div>

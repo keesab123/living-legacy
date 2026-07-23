@@ -428,7 +428,14 @@ export default function App() {
             </div>
 
             <div id="dossier-print-root" style={{ padding: '18px 32px 48px', position: 'relative' }}>
-              <div className="coffee-ring no-print" />
+              {selected.name && (
+                <img
+                  className="no-print photo-seal"
+                  src={photoUrl(selected.name, 200)}
+                  alt=""
+                  onError={e => { e.target.style.display = 'none' }}
+                />
+              )}
 
               <div className="no-print" style={{ position: 'absolute', top: -30, right: 32, display: 'flex', gap: 8 }}>
                 {brief && !brief.error && (

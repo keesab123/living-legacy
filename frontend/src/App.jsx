@@ -9,9 +9,9 @@ const SIDEBAR_WIDTH = 380
 const DRAWER_WIDTH = 480
 
 const TIER_COLOR = {
-  high: '#c0392b',
-  medium: '#d9b830',
-  low: '#3f8f5f',
+  high: '#a13328',
+  medium: '#b8863a',
+  low: '#4a6b48',
 }
 
 const TIER_LABEL = { high: 'High', medium: 'Medium', low: 'Low' }
@@ -44,7 +44,7 @@ const SIGNAL_INFO = {
 // that floats over the content instead of pushing the rest of the brief down
 function SignalBar({ name, value }) {
   const [open, setOpen] = useState(false)
-  const color = value >= 0.66 ? '#c0392b' : value >= 0.33 ? '#d9b830' : '#3f8f5f'
+  const color = value >= 0.66 ? '#a13328' : value >= 0.33 ? '#b8863a' : '#4a6b48'
   const description = SIGNAL_INFO[name] || 'One of several structural and behavioral indicators used to compute this succession risk score.'
   return (
     <div
@@ -203,10 +203,10 @@ export default function App() {
         layout: { visibility: 'none' },
         paint: {
           'circle-radius': ['interpolate', ['linear'], ['get', 'business_count'], 3, 22, 21, 60],
-          'circle-color': '#9b8cd6',
+          'circle-color': '#6f93a0',
           'circle-opacity': 0.22,
           'circle-stroke-width': 1.5,
-          'circle-stroke-color': '#9b8cd6',
+          'circle-stroke-color': '#6f93a0',
           'circle-stroke-opacity': 0.7,
         },
       })
@@ -283,6 +283,7 @@ export default function App() {
         transform: sidebarCollapsed ? `translateX(calc(-100% - 16px + 44px))` : 'translateX(0)',
       }}>
         <div className="glass-card" style={{ padding: '22px 22px 20px', color: 'var(--cream)', position: 'relative', flexShrink: 0 }}>
+          <div className="registry-tab"><span>REGISTRY</span></div>
           <button
             onClick={() => setSidebarCollapsed(v => !v)}
             className="ghost-btn collapse-btn"
@@ -337,7 +338,7 @@ export default function App() {
                 style={{
                   display: 'flex', alignItems: 'center', gap: 12, width: 'calc(100% - 16px)', textAlign: 'left',
                   margin: '2px 8px',
-                  background: isSelected ? 'rgba(155,140,214,0.18)' : 'transparent',
+                  background: isSelected ? 'rgba(111,147,160,0.18)' : 'transparent',
                   color: 'var(--cream)', font: 'inherit',
                   border: 'none', borderRadius: 12,
                   cursor: 'pointer', padding: '9px 10px',
@@ -354,10 +355,11 @@ export default function App() {
                   style={{ width: 42, height: 42, objectFit: 'cover', borderRadius: 10, flexShrink: 0, background: 'var(--paper-dim)', opacity: 0 }}
                 />
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
+                  <div className="ledger-row">
                     <span style={{
-                      fontSize: 13, fontWeight: 600, color: '#fbf9f4', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      fontSize: 13, fontWeight: 600, color: '#fbf9f4', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 1,
                     }}>{b.name}</span>
+                    <span className="ledger-leader" />
                     <span className={`tier-badge tier-badge-${b.risk_tier}`}>
                       <span className="font-mono">{Math.round(b.risk_score)}</span>
                     </span>
@@ -383,13 +385,13 @@ export default function App() {
             className="ghost-btn hotspot-toggle"
             style={{
               display: 'flex', alignItems: 'center', gap: 8, width: '100%', marginTop: 14,
-              background: hotspotsOn ? 'rgba(155,140,214,0.2)' : 'rgba(255,255,255,0.04)',
+              background: hotspotsOn ? 'rgba(111,147,160,0.2)' : 'rgba(255,255,255,0.04)',
               borderColor: hotspotsOn ? 'var(--lavender)' : 'rgba(255,255,255,0.08)',
               color: 'var(--cream)', fontSize: 12, fontWeight: 600,
               padding: '10px 12px', borderRadius: 10,
             }}
           >
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#9b8cd6', flexShrink: 0 }} />
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#6f93a0', flexShrink: 0 }} />
             {hotspotsOn ? 'Hide' : 'Show'} risk hotspot corridors
             {clusters.length > 0 && (
               <span className="font-mono" style={{ marginLeft: 'auto', color: 'var(--cream-soft)', fontWeight: 500 }}>{clusters.length}</span>
@@ -421,81 +423,75 @@ export default function App() {
       }}>
         {selected && (
           <>
-            {selected.name && (
-              <div className="no-print" style={{ position: 'relative', height: 200, background: 'var(--paper-dim)' }}>
-                <img
-                  src={photoUrl(selected.name, 900)}
-                  alt=""
-                  onError={e => { e.target.style.display = 'none' }}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                />
-                <div style={{
-                  position: 'absolute', inset: 0,
-                  background: 'linear-gradient(to top, rgba(10,9,13,0.88), rgba(10,9,13,0.15) 60%, rgba(10,9,13,0) 85%)',
-                }} />
-                <div style={{ position: 'absolute', top: 16, right: 16, display: 'flex', gap: 8 }}>
-                  {brief && !brief.error && (
-                    <button
-                      onClick={() => window.print()}
-                      className="ghost-btn"
-                      style={{
-                        background: 'rgba(255,255,255,0.1)', color: 'var(--cream)',
-                        fontWeight: 700, fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase',
-                        padding: '7px 12px', borderRadius: 6,
-                      }}
-                    >
-                      Print Brief
-                    </button>
-                  )}
+            <div className="folder-tab no-print">
+              {selected.account_id ? `File No. ${selected.account_id}` : 'Case File'}
+            </div>
+
+            <div id="dossier-print-root" style={{ padding: '18px 32px 48px', position: 'relative' }}>
+              <div className="coffee-ring no-print" />
+
+              <div className="no-print" style={{ position: 'absolute', top: -30, right: 32, display: 'flex', gap: 8 }}>
+                {brief && !brief.error && (
                   <button
-                    onClick={() => { setSelected(null); setBrief(null) }}
-                    className="solid-btn"
+                    onClick={() => window.print()}
+                    className="ghost-btn"
                     style={{
-                      background: 'var(--lavender)', border: 'none', cursor: 'pointer',
-                      color: '#1c1a22', fontWeight: 700, fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase',
-                      padding: '7px 12px', borderRadius: 6,
+                      background: 'var(--paper)', color: 'var(--ink)',
+                      fontWeight: 700, fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase',
+                      padding: '7px 12px', borderRadius: 4,
                     }}
                   >
-                    Close
+                    Print Brief
                   </button>
-                </div>
-                <div style={{ position: 'absolute', left: 28, bottom: 18, right: 28 }}>
-                  <div style={{ ...label, color: 'var(--lavender)' }}>
-                    {selected.account_id ? `No. ${selected.account_id}` : 'Dossier'}
-                  </div>
-                  <div className="font-display" style={{ fontSize: 26, fontWeight: 600, color: 'var(--cream)', lineHeight: 1.15, marginTop: 6 }}>
-                    {selected.name}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div id="dossier-print-root" style={{ padding: '28px 32px 48px' }}>
-              <div className="print-only" style={{ display: 'none' }}>
-                <div className="font-display" style={{ fontSize: 26, fontWeight: 600, color: 'var(--ink)' }}>{selected.name}</div>
-              </div>
-              <div style={{ fontSize: 13, color: 'var(--ink-soft)' }}>{selected.address}</div>
-
-              <div style={{
-                marginTop: 20, paddingBottom: 18, borderBottom: `2px solid ${TIER_COLOR[selected.risk_tier]}`,
-                display: 'flex', alignItems: 'baseline', gap: 12, position: 'relative',
-              }}>
-                <span
-                  className="font-display score-glow"
+                )}
+                <button
+                  onClick={() => { setSelected(null); setBrief(null) }}
+                  className="solid-btn"
                   style={{
-                    fontSize: 48, fontWeight: 700, color: TIER_COLOR[selected.risk_tier], lineHeight: 1,
-                    '--glow-color': TIER_COLOR[selected.risk_tier],
+                    background: 'var(--stamp-red)', border: 'none', cursor: 'pointer',
+                    color: 'var(--cream)', fontWeight: 700, fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase',
+                    padding: '7px 12px', borderRadius: 4,
                   }}
                 >
-                  {Math.round(selected.risk_score)}
-                </span>
-                <span style={{ fontSize: 13, color: 'var(--ink-soft)' }}>/ 100</span>
-                <span style={{
-                  marginLeft: 'auto', fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase',
-                  color: TIER_COLOR[selected.risk_tier], fontWeight: 700,
-                }}>
-                  {selected.risk_tier} risk
-                </span>
+                  Close
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', paddingRight: 96 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="font-display" style={{ fontSize: 30, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.15 }}>
+                    {selected.name}
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 6 }}>{selected.address}</div>
+                </div>
+                {selected.name && (
+                  <img
+                    className="no-print"
+                    src={photoUrl(selected.name, 240)}
+                    alt=""
+                    onError={e => { e.target.style.visibility = 'hidden' }}
+                    style={{
+                      width: 84, height: 84, objectFit: 'cover', flexShrink: 0,
+                      border: '4px solid #fff8ea', boxShadow: '0 6px 14px rgba(0,0,0,0.35)',
+                      transform: 'rotate(4deg)',
+                    }}
+                  />
+                )}
+              </div>
+
+              <div style={{
+                marginTop: 22, paddingBottom: 18, borderBottom: `2px solid ${TIER_COLOR[selected.risk_tier]}`,
+                display: 'flex', alignItems: 'center', gap: 18,
+              }}>
+                <div className="risk-stamp" style={{ color: TIER_COLOR[selected.risk_tier] }}>
+                  <span className="font-display" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1 }}>
+                    {Math.round(selected.risk_score)}
+                  </span>
+                  <span className="risk-stamp-tier">{selected.risk_tier} risk</span>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--ink-soft)', lineHeight: 1.55 }}>
+                  Succession risk score, out of 100 — based on the structural and behavioral signals filed below.
+                </div>
               </div>
 
               {briefLoading && (

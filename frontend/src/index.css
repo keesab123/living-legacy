@@ -1,20 +1,25 @@
 :root {
-  --bg: #131218;
-  --sidebar: #1c1a22;
-  --sidebar-rule: rgba(236, 230, 216, 0.12);
-  --cream: #f2eee3;
-  --cream-soft: #b3ab9c;
-  --paper: #f2ece0;
-  --paper-dim: #e6dcc7;
-  --ink: #221f19;
-  --ink-soft: #6f6656;
-  --rule: rgba(34, 31, 25, 0.14);
-  --risk-high: #c0392b;
-  --risk-medium: #d9b830;
-  --risk-low: #3f8f5f;
+  /* a municipal case-file registry, not a dashboard — kraft folders, ledger
+     ink, and a rubber-stamp red instead of glass and gradients */
+  --bg: #14100a;
+  --sidebar: #241a10;
+  --sidebar-rule: rgba(233, 214, 173, 0.16);
+  --cream: #f1e6cd;
+  --cream-soft: #b9a480;
+  --paper: #efe4c8;
+  --paper-dim: #ded0a9;
+  --ink: #2a1f14;
+  --ink-soft: #7a6748;
+  --rule: rgba(42, 31, 20, 0.18);
+  --risk-high: #a13328;
+  --risk-medium: #b8863a;
+  --risk-low: #4a6b48;
   --slate: #6b7280;
-  --lavender: #9b8cd6;
-  --map-bg: #131218;
+  --lavender: #6f93a0;
+  --stamp-red: #a13328;
+  --kraft: #c9ad76;
+  --kraft-dark: #a98a54;
+  --map-bg: #14100a;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -53,10 +58,10 @@ html, body {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-::selection { background: var(--lavender); color: var(--ink); }
+::selection { background: var(--kraft); color: var(--ink); }
 
 :focus-visible {
-  outline: 2px solid var(--lavender);
+  outline: 2px solid var(--stamp-red);
   outline-offset: 2px;
 }
 
@@ -144,7 +149,7 @@ html, body {
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 .ghost-btn:hover {
-  background: rgba(155, 140, 214, 0.12);
+  background: rgba(111, 147, 160, 0.12);
   border-color: var(--lavender);
 }
 
@@ -155,11 +160,11 @@ html, body {
 .solid-btn:hover { filter: brightness(1.08); }
 .solid-btn:active { transform: translateY(1px); }
 
-.biz-row:hover { background: rgba(155, 140, 214, 0.08) !important; }
+.biz-row:hover { background: rgba(111, 147, 160, 0.08) !important; }
 .biz-row img { transition: opacity 0.2s ease; }
 
 .hotspot-toggle:hover {
-  background: rgba(155, 140, 214, 0.1) !important;
+  background: rgba(111, 147, 160, 0.1) !important;
   border-color: var(--lavender) !important;
 }
 
@@ -175,35 +180,20 @@ html, body {
   .top-at-risk-row:hover { background: rgba(255, 255, 255, 0.03); }
 }
 
-/* an aurora glow drifting behind the bento stack — visible through the
-   glass-card blur, the signature "hyper modern" depth cue */
 .bento-stack {
   position: relative;
 }
-.bento-stack::before {
-  content: '';
-  position: absolute;
-  top: -120px; left: -140px;
-  width: 420px; height: 420px;
-  background: radial-gradient(circle, rgba(155,140,214,0.55), rgba(192,57,43,0.25) 55%, transparent 72%);
-  filter: blur(60px);
-  z-index: -1;
-  animation: aurora-drift 14s ease-in-out infinite alternate;
-  pointer-events: none;
-}
-@keyframes aurora-drift {
-  from { transform: translate(0, 0) scale(1); }
-  to { transform: translate(40px, 60px) scale(1.15); }
-}
 
-/* each bento tile floats independently over the map as frosted glass */
+/* each tile reads as a kraft-paper case card, not frosted glass —
+   textured fiber background, ink-brown border, a folded-corner shadow */
 .glass-card {
-  background: rgba(28, 26, 34, 0.82);
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 18px;
-  box-shadow: 0 16px 40px rgba(0,0,0,0.35);
+  position: relative;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(255,255,255,0.03), transparent 40%),
+    var(--sidebar);
+  border: 1px solid rgba(233, 214, 173, 0.14);
+  border-radius: 3px;
+  box-shadow: 0 10px 26px rgba(0,0,0,0.4), inset 0 0 0 1px rgba(0,0,0,0.2);
 }
 
 .bento-stack .sidebar-fade {
@@ -216,38 +206,41 @@ html, body {
 }
 
 .collapse-btn { font-size: 15px !important; line-height: 1; }
-.collapse-btn:hover { background: rgba(155, 140, 214, 0.22) !important; }
+.collapse-btn:hover { background: rgba(161, 51, 40, 0.28) !important; }
 
 .dossier-drawer { border: 1px solid var(--rule); }
 
+/* the wordmark reads like a rubber-stamped registry heading — ink-brown
+   with a hairline red underline, not a gradient */
 .gradient-text {
-  background: linear-gradient(120deg, var(--lavender), #e9c9d8 60%, var(--cream));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--cream);
+  border-bottom: 2px solid var(--stamp-red);
+  padding-bottom: 2px;
 }
 .gradient-text-warm {
-  background: linear-gradient(120deg, #ff8a7a, var(--lavender));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--stamp-red);
 }
 
 .stat-tile {
-  padding: 14px 16px;
-  border-radius: 14px;
-  background: linear-gradient(160deg, rgba(192,57,43,0.22), rgba(155,140,214,0.12));
-  border: 1px solid rgba(192,57,43,0.3);
+  position: relative;
+  padding: 14px 16px 14px 18px;
+  border-radius: 2px;
+  background: rgba(161, 51, 40, 0.1);
+  border: 1px solid rgba(161, 51, 40, 0.4);
+  border-left: 4px solid var(--stamp-red);
 }
 
+/* file-tag chips, like a rubber date/status stamp on a paper card —
+   outlined ink instead of a glossy gradient pill */
 .tier-badge {
   display: inline-flex; align-items: center; flex-shrink: 0;
-  font-size: 11.5px; font-weight: 700; color: #1c1a22;
-  border-radius: 999px; padding: 3px 9px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.02em;
+  border: 1.5px solid currentColor;
+  border-radius: 3px; padding: 2px 7px;
 }
-.tier-badge-high { background: linear-gradient(120deg, #ff8a7a, #c0392b); color: #fff; }
-.tier-badge-medium { background: linear-gradient(120deg, #f4d976, #d9b830); }
-.tier-badge-low { background: linear-gradient(120deg, #7ed6a5, #3f8f5f); color: #fff; }
+.tier-badge-high { color: #e2897e; }
+.tier-badge-medium { color: #e0bb7c; }
+.tier-badge-low { color: #8fb98c; }
 
 .biz-row:hover { transform: translateX(2px); }
 
@@ -288,4 +281,104 @@ html, body {
 .signal-tooltip.visible {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* ————————————————————————————————————————————————————————————————
+   Registry motifs — the creative core of the theme: a punch-hole
+   rolodex tab on the sidebar, a manila folder tab on the dossier,
+   dot-leader ledger rows for the business list, and a rubber-stamp
+   treatment for the risk score.
+   ———————————————————————————————————————————————————————————————— */
+
+/* a small punched hole + vertical "REGISTRY" tab, like a rolodex card,
+   riveted to the top-left of the sidebar's first card */
+.registry-tab {
+  position: absolute;
+  top: 14px; left: -11px;
+  width: 22px; height: 64px;
+  background: var(--kraft);
+  border: 1px solid var(--kraft-dark);
+  border-radius: 3px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 2px 2px 6px rgba(0,0,0,0.35);
+}
+.registry-tab span {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: #3a2a12;
+}
+.registry-tab::before {
+  content: '';
+  position: absolute;
+  top: 8px; left: 50%; transform: translateX(-50%);
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--sidebar);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.5);
+}
+
+/* business list rows: a ledger line with a dotted leader connecting
+   name to score, like a table of contents or phonebook entry */
+.ledger-row {
+  display: flex; align-items: baseline; gap: 6px;
+  width: 100%;
+}
+.ledger-leader {
+  flex: 1;
+  border-bottom: 1px dotted rgba(233, 214, 173, 0.28);
+  margin-bottom: 4px;
+  min-width: 8px;
+}
+
+/* the dossier's folder tab — a manila tab sticking up off the top edge,
+   labeled like a case file, instead of a hero photo taking the full width */
+.folder-tab {
+  position: relative;
+  margin: 22px 0 0 28px;
+  display: inline-block;
+  background: var(--kraft);
+  color: #3a2a12;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 5px 14px 5px 10px;
+  border-radius: 4px 10px 0 0;
+  border: 1px solid var(--kraft-dark);
+  border-bottom: none;
+}
+
+/* a rubber-stamp ring around the risk score — double outline, slight
+   rotation, ink-bleed color instead of a clean gradient badge */
+.risk-stamp {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-direction: column;
+  width: 92px; height: 92px;
+  border-radius: 50%;
+  border: 3px double currentColor;
+  transform: rotate(-6deg);
+  flex-shrink: 0;
+}
+.risk-stamp-tier {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+
+/* a faint coffee-ring stain in the dossier corner — a small bit of
+   texture/character that has no function, purely atmosphere */
+.coffee-ring {
+  position: absolute;
+  top: 18px; right: 26px;
+  width: 84px; height: 84px;
+  border-radius: 50%;
+  border: 6px solid rgba(122, 67, 32, 0.07);
+  pointer-events: none;
 }

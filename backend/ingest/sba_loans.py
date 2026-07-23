@@ -9,6 +9,22 @@ SBA_FILES = [
     RAW_DIR / "FOIA_7a_FY2020_Present_asof_260630.csv",
 ]
 
+# Restaurant-specific NAICS codes. merge.py matches loan records to
+# restaurants by address alone (loan filings use the legal entity name,
+# e.g. "JCAS, INC.", not the trade name, so name matching finds almost
+# nothing) — without a NAICS filter that also pulls in whatever unrelated
+# business happens to share a street address, e.g. a trucking company or
+# gas station in the same plaza.
+RESTAURANT_NAICS = {
+    722110,  # full-service restaurants
+    722211,  # limited-service restaurants
+    722212,  # cafeterias
+    722213,  # snack and nonalcoholic beverage bars
+    722310,  # food service contractors
+    722320,  # caterers
+    722330,  # mobile food services
+}
+
 
 def fetch() -> pd.DataFrame:
     dfs = []
@@ -39,6 +55,9 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
 
     # Flag businesses that have accessed SBA programs
     df["has_sba_loan"] = True
+
+    if "NaicsCode" in df.columns:
+        df = df[df["NaicsCode"].isin(RESTAURANT_NAICS)]
 
     return df
 

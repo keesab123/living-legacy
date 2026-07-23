@@ -1,6 +1,7 @@
 import httpx
 import pandas as pd
 from pathlib import Path
+from .matching import parse_address
 
 RAW_DIR = Path(__file__).parent.parent / "data" / "raw"
 RAW_DIR.mkdir(parents=True, exist_ok=True)
@@ -28,16 +29,6 @@ def fetch() -> pd.DataFrame:
     return pd.DataFrame([f["attributes"] for f in features])
 
 
-def _normalize_address(series: pd.Series) -> pd.Series:
-    return (
-        series.astype(str)
-        .str.upper()
-        .str.replace(r"[.,]", "", regex=True)
-        .str.replace(r"\s+", " ", regex=True)
-        .str.strip()
-    )
-
-
 def clean(df: pd.DataFrame) -> pd.DataFrame:
     # TODO: confirm actual field names once DATA_SOURCE is wired up — these are
     # the typical names on county assessor parcel layers.
@@ -56,10 +47,12 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
     # owned by someone else (a landlord) and the business is a tenant.
     # This is a proxy, not a direct signal — county rolls don't publish
     # private commercial lease terms, so lease_expires/months_until_lease_expires
-    # stay unavailable from this source.
+    # stay unavailable from this source. Reuses matching.parse_address (house
+    # number + normalized street) rather than a separate ad hoc normalizer,
+    # so "same address" is judged the same way everywhere in the pipeline.
     if "address" in df.columns and "owner_mailing_address" in df.columns:
-        situs_norm = _normalize_address(df["address"])
-        owner_norm = _normalize_address(df["owner_mailing_address"])
+        situs_norm = df["address"].apply(parse_address)
+        owner_norm = df["owner_mailing_address"].apply(parse_address)
         df["owner_occupied"] = situs_norm == owner_norm
     else:
         df["owner_occupied"] = pd.NA

@@ -1,7 +1,7 @@
 import httpx
 import pandas as pd
-from concurrent.futures import ThreadPoolExecutor
 from config import require
+from .http_utils import parallel_map
 
 TEXT_SEARCH_URL = "https://maps.googleapis.com/maps/api/place/textsearch/json"
 
@@ -31,8 +31,7 @@ def filter_closed(df: pd.DataFrame, max_workers: int = 12) -> pd.DataFrame:
     permanently closed. Runs one Text Search call per row — cheap in dollars
     (well under $0.01/business) but does real network I/O, so only run this
     over the full set periodically, not on every request."""
-    with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        statuses = list(ex.map(lambda r: _check_one(r["name"], r["address"]), df.to_dict("records")))
+    statuses = parallel_map(lambda r: _check_one(r["name"], r["address"]), df.to_dict("records"), max_workers=max_workers)
     df = df.assign(_closure_status=statuses)
     kept = df[~df["_closure_status"].isin(["CLOSED_PERMANENTLY", "NO_RESULTS"])]
     return kept.drop(columns=["_closure_status"])

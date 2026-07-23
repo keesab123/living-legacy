@@ -1,10 +1,10 @@
 import httpx
 import pandas as pd
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 from config import require
+from .http_utils import get_json, parallel_map
 
 RAW_DIR = Path(__file__).parent.parent / "data" / "raw"
 RAW_DIR.mkdir(parents=True, exist_ok=True)
@@ -12,17 +12,9 @@ RAW_DIR.mkdir(parents=True, exist_ok=True)
 PLACES_BASE = "https://maps.googleapis.com/maps/api/place"
 
 
-def get_place_details(place_id: str, retries: int = 3) -> dict:
+def get_place_details(place_id: str) -> dict:
     params = {"place_id": place_id, "fields": "name,website,url,business_status", "key": require("GOOGLE_API_KEY")}
-    for attempt in range(retries):
-        try:
-            resp = httpx.get(f"{PLACES_BASE}/details/json", params=params, timeout=15)
-            resp.raise_for_status()
-            return resp.json().get("result", {})
-        except httpx.HTTPError:
-            if attempt == retries - 1:
-                return {}
-    return {}
+    return get_json(f"{PLACES_BASE}/details/json", params).get("result", {})
 
 
 def check_website_staleness(url: str) -> dict:
@@ -61,8 +53,7 @@ def run(place_ids: list[str], max_workers: int = 16) -> pd.DataFrame:
     """Pass place_ids from Google Places search results. Each place_id needs
     one Place Details call plus one HEAD request to its website, both
     network-bound, so fan them out instead of doing them serially."""
-    with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        records = list(ex.map(_check_one, place_ids))
+    records = parallel_map(_check_one, place_ids, max_workers=max_workers)
     df = pd.DataFrame(records)
     df.to_csv(RAW_DIR / "website_staleness_raw.csv", index=False)
     return df

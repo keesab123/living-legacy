@@ -3,6 +3,7 @@ import pandas as pd
 import time
 from pathlib import Path
 from config import require
+from .http_utils import parallel_map
 
 RAW_DIR = Path(__file__).parent.parent / "data" / "raw"
 RAW_DIR.mkdir(parents=True, exist_ok=True)
@@ -48,22 +49,32 @@ def _fetch_page(url: str, params: dict) -> list[dict]:
     return results
 
 
+def _fetch_tile(url: str, center: str, place_type: str) -> list[dict]:
+    params = {
+        "location": center,
+        "radius": SEARCH_RADIUS_METERS,
+        "type": place_type,
+        "key": require("GOOGLE_API_KEY"),
+    }
+    return _fetch_page(url, params)
+
+
 def search_restaurants() -> list[dict]:
     url = f"{PLACES_BASE}/nearbysearch/json"
-    by_place_id = {}
+    tiles = [(center, place_type) for center in GRID_CENTERS for place_type in PLACE_TYPES]
 
-    for center in GRID_CENTERS:
-        for place_type in PLACE_TYPES:
-            params = {
-                "location": center,
-                "radius": SEARCH_RADIUS_METERS,
-                "type": place_type,
-                "key": require("GOOGLE_API_KEY"),
-            }
-            for r in _fetch_page(url, params):
-                place_id = r.get("place_id")
-                if place_id:
-                    by_place_id[place_id] = r
+    # Each (center, place_type) tile is an independent search — running the
+    # 40 of them serially (each with up to 4s of required pagination sleep)
+    # made this the slowest step in the pipeline by far. They don't share
+    # state, so fan them out like every other network loop in this package.
+    results = parallel_map(lambda t: _fetch_tile(url, t[0], t[1]), tiles, max_workers=10)
+
+    by_place_id = {}
+    for tile_results in results:
+        for r in tile_results:
+            place_id = r.get("place_id")
+            if place_id:
+                by_place_id[place_id] = r
 
     return list(by_place_id.values())
 

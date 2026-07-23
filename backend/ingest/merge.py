@@ -35,9 +35,6 @@ def run() -> pd.DataFrame:
     for col in ("months_until_lease_expires", "owner_occupied"):
         if col not in df.columns:
             df[col] = pd.NA
-    loan_names = loans[["business_name", "has_sba_loan"]].drop_duplicates()
-    df = df.merge(loan_names, left_on="name", right_on="business_name", how="left")
-    df["has_sba_loan"] = df["has_sba_loan"].fillna(False)
 
     # Stream 2 — behavioral
     places = google_places.run()
@@ -71,6 +68,18 @@ def run() -> pd.DataFrame:
     # against it and fall back to neutral scoring signals where there's no
     # license record for a given place.
     full = match_businesses(behavioral, df, name_col="name", address_col="address", how="left")
+
+    # SBA loan records are filed under the legal entity name ("JCAS, INC."),
+    # not the trade name a restaurant actually operates under ("Papillon
+    # Restaurant") — the two are frequently unrelated strings, so name
+    # similarity is useless here and matching on name (like the exact-match
+    # join this replaced) silently found almost no one. Match on address
+    # alone instead.
+    loan_records = loans[["business_name", "address", "has_sba_loan"]].drop_duplicates()
+    full = match_businesses(
+        full, loan_records, name_col="name", address_col="address",
+        right_name_col="business_name", how="left", address_only=True,
+    )
     full["has_sba_loan"] = full["has_sba_loan"].fillna(False)
 
     # A place can match more than one historical license record at the same

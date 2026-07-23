@@ -1,3 +1,4 @@
+from __future__ import annotations
 import re
 import difflib
 import pandas as pd
@@ -64,55 +65,63 @@ def match_businesses(
     right: pd.DataFrame,
     name_col: str = "name",
     address_col: str = "address",
+    right_name_col: str | None = None,
     min_name_similarity: float = 0.5,
     how: str = "inner",
+    address_only: bool = False,
 ) -> pd.DataFrame:
     """Fuzzy-join two business dataframes on normalized (house_number, street)
     plus name similarity. Returns `left` joined with `right`'s columns
     (suffixed `_r` on collision). how="inner" keeps only matched rows;
     how="left" keeps every left row, with right's columns as NaN when
-    there's no match."""
-    left = left.copy()
-    right = right.copy()
+    there's no match. right_name_col lets the two sides use differently
+    named columns (e.g. matching a "name" column against "business_name")
+    instead of requiring the caller to duplicate one into the other first.
+    address_only=True skips the name-similarity requirement entirely — for
+    sources like SBA loan filings that record the legal entity name rather
+    than the trade name, where name text isn't a reliable signal and the
+    address match is all there is to go on."""
+    right_name_col = right_name_col or name_col
+    effective_threshold = 0.0 if address_only else min_name_similarity
 
-    left[["_house", "_street"]] = left[address_col].apply(lambda a: pd.Series(parse_address(a)))
-    right[["_house", "_street"]] = right[address_col].apply(lambda a: pd.Series(parse_address(a)))
-    left["_norm_name"] = left[name_col].apply(normalize_name)
-    right["_norm_name"] = right[name_col].apply(normalize_name)
+    left_house, left_street = zip(*left[address_col].map(parse_address)) if len(left) else ((), ())
+    left_norm_name = left[name_col].map(normalize_name).tolist()
+
+    right_house, right_street = zip(*right[address_col].map(parse_address)) if len(right) else ((), ())
+    right_norm_name = right[right_name_col].map(normalize_name).tolist()
+
+    skip = {name_col, address_col, right_name_col}
+    right_cols = [c for c in right.columns if c not in skip]
+    right_records = right[right_cols].to_dict("records")
 
     right_by_addr: dict[tuple, list[int]] = {}
-    for idx, row in right.iterrows():
-        key = (row["_house"], row["_street"])
-        right_by_addr.setdefault(key, []).append(idx)
-
-    skip = {name_col, address_col, "_house", "_street", "_norm_name"}
-    right_cols = [c for c in right.columns if c not in skip]
+    for i, key in enumerate(zip(right_house, right_street)):
+        right_by_addr.setdefault(key, []).append(i)
 
     rows = []
-    for _, lrow in left.iterrows():
-        candidates = right_by_addr.get((lrow["_house"], lrow["_street"]), [])
+    for i, lrow in enumerate(left.to_dict("records")):
+        candidates = right_by_addr.get((left_house[i], left_street[i]), [])
         best_idx, best_score = None, 0.0
-        if lrow["_house"] and candidates:
+        if left_house[i] and candidates:
             if len(candidates) == 1:
                 # Same normalized house number + street and nothing else there
                 # to confuse it with — trust the address match on its own,
                 # since names legitimately diverge (DBA vs. registered legal name).
                 best_idx, best_score = candidates[0], 1.0
             else:
-                for idx in candidates:
-                    score = name_similarity(lrow["_norm_name"], right.loc[idx, "_norm_name"])
+                for c in candidates:
+                    score = name_similarity(left_norm_name[i], right_norm_name[c])
                     if score > best_score:
-                        best_idx, best_score = idx, score
+                        best_idx, best_score = c, score
 
-        matched = best_idx is not None and best_score >= min_name_similarity
+        matched = best_idx is not None and best_score >= effective_threshold
         if not matched and how == "inner":
             continue
 
-        combined = {**lrow.to_dict()}
+        combined = dict(lrow)
         for col in right_cols:
-            val = right.loc[best_idx, col] if matched else pd.NA
+            val = right_records[best_idx][col] if matched else pd.NA
             combined[f"{col}_r" if col in combined else col] = val
         rows.append(combined)
 
-    result = pd.DataFrame(rows)
-    return result.drop(columns=["_house", "_street", "_norm_name"], errors="ignore")
+    return pd.DataFrame(rows)

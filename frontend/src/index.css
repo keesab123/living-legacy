@@ -22,13 +22,22 @@
 html, body {
   background: var(--bg);
   color: var(--ink);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'Sora', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 #root { width: 100vw; height: 100vh; position: relative; overflow: hidden; }
 
 .font-display {
-  font-family: 'Playfair Display', Georgia, serif;
+  font-family: 'Fraunces', Georgia, serif;
+  font-optical-sizing: auto;
+}
+
+/* Numeric/data values (scores, signal percentages, stats) get a distinct
+   monospace treatment — reinforces the "fully auditable" data-journalism
+   feel and makes numbers easier to scan and compare at a glance. */
+.font-mono {
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  font-variant-numeric: tabular-nums;
 }
 
 
@@ -46,6 +55,11 @@ html, body {
 
 ::selection { background: var(--lavender); color: var(--ink); }
 
+:focus-visible {
+  outline: 2px solid var(--lavender);
+  outline-offset: 2px;
+}
+
 .mapboxgl-ctrl-logo, .mapboxgl-ctrl-attrib { opacity: 0.6; }
 
 .mapboxgl-ctrl-group {
@@ -55,18 +69,67 @@ html, body {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2) !important;
 }
 
+/* dark, unobtrusive scrollbars that match the sidebar/paper surfaces
+   instead of the OS default, which clashed against both themes */
+.sidebar-scroll::-webkit-scrollbar, .paper-scroll::-webkit-scrollbar {
+  width: 9px;
+}
+.sidebar-scroll::-webkit-scrollbar-track, .paper-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: rgba(236, 230, 216, 0.16);
+  border-radius: 999px;
+  border: 2px solid var(--sidebar);
+}
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(236, 230, 216, 0.26);
+}
+.paper-scroll::-webkit-scrollbar-thumb {
+  background: rgba(34, 31, 25, 0.16);
+  border-radius: 999px;
+  border: 2px solid var(--paper);
+}
+.paper-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(34, 31, 25, 0.26);
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fade-up 0.28s ease both; }
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.fade-in { animation: fade-in 0.2s ease both; }
+
+@keyframes shimmer {
+  from { background-position: -120px 0; }
+  to { background-position: 120px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--paper-dim) 25%, rgba(230,220,199,0.5) 50%, var(--paper-dim) 75%);
+  background-size: 240px 100%;
+  animation: shimmer 1.3s ease-in-out infinite;
+}
+.sidebar-scroll .skeleton {
+  background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.09) 50%, rgba(255,255,255,0.04) 75%);
+  background-size: 240px 100%;
+}
+
 @media print {
   html, body { background: #fff; }
   #root { height: auto !important; overflow: visible !important; }
-  .app-shell { height: auto !important; padding: 0 !important; background: #fff !important; }
+  .app-shell { height: auto !important; background: #fff !important; }
   .no-print { display: none !important; }
   .print-only { display: block !important; }
-  .app-stage {
+  .dossier-drawer {
     position: static !important; height: auto !important; overflow: visible !important;
-    box-shadow: none !important; border-radius: 0 !important;
-  }
-  .app-dossier-overlay {
-    position: static !important; height: auto !important; overflow: visible !important;
+    box-shadow: none !important; border-radius: 0 !important; width: 100% !important;
+    transform: none !important; max-width: 720px; margin: 0 auto;
   }
   #dossier-print-root { max-width: 100% !important; }
   #root::after { display: none !important; }
@@ -84,3 +147,116 @@ html, body {
   background: rgba(155, 140, 214, 0.12);
   border-color: var(--lavender);
 }
+
+.solid-btn {
+  cursor: pointer;
+  transition: filter 0.15s ease, transform 0.1s ease;
+}
+.solid-btn:hover { filter: brightness(1.08); }
+.solid-btn:active { transform: translateY(1px); }
+
+.biz-row:hover { background: rgba(155, 140, 214, 0.08) !important; }
+.biz-row img { transition: opacity 0.2s ease; }
+
+.hotspot-toggle:hover {
+  background: rgba(155, 140, 214, 0.1) !important;
+  border-color: var(--lavender) !important;
+}
+
+.top-link {
+  transition: color 0.15s ease, gap 0.15s ease;
+}
+.top-link:hover { color: var(--cream) !important; }
+.top-link:hover .top-link-arrow { transform: translateX(3px); }
+.top-link-arrow { display: inline-block; transition: transform 0.15s ease; }
+
+.top-at-risk-row:hover { background: rgba(34, 31, 25, 0.035); }
+@media (prefers-color-scheme: dark) {
+  .top-at-risk-row:hover { background: rgba(255, 255, 255, 0.03); }
+}
+
+/* an aurora glow drifting behind the bento stack — visible through the
+   glass-card blur, the signature "hyper modern" depth cue */
+.bento-stack {
+  position: relative;
+}
+.bento-stack::before {
+  content: '';
+  position: absolute;
+  top: -120px; left: -140px;
+  width: 420px; height: 420px;
+  background: radial-gradient(circle, rgba(155,140,214,0.55), rgba(192,57,43,0.25) 55%, transparent 72%);
+  filter: blur(60px);
+  z-index: -1;
+  animation: aurora-drift 14s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+@keyframes aurora-drift {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(40px, 60px) scale(1.15); }
+}
+
+/* each bento tile floats independently over the map as frosted glass */
+.glass-card {
+  background: rgba(28, 26, 34, 0.82);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 18px;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.35);
+}
+
+.bento-stack .sidebar-fade {
+  opacity: 1;
+  transition: opacity 0.15s ease;
+}
+.bento-stack.collapsed .sidebar-fade {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.collapse-btn { font-size: 15px !important; line-height: 1; }
+.collapse-btn:hover { background: rgba(155, 140, 214, 0.22) !important; }
+
+.dossier-drawer { border: 1px solid var(--rule); }
+
+.gradient-text {
+  background: linear-gradient(120deg, var(--lavender), #e9c9d8 60%, var(--cream));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.gradient-text-warm {
+  background: linear-gradient(120deg, #ff8a7a, var(--lavender));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.stat-tile {
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: linear-gradient(160deg, rgba(192,57,43,0.22), rgba(155,140,214,0.12));
+  border: 1px solid rgba(192,57,43,0.3);
+}
+
+.tier-badge {
+  display: inline-flex; align-items: center; flex-shrink: 0;
+  font-size: 11.5px; font-weight: 700; color: #1c1a22;
+  border-radius: 999px; padding: 3px 9px;
+}
+.tier-badge-high { background: linear-gradient(120deg, #ff8a7a, #c0392b); color: #fff; }
+.tier-badge-medium { background: linear-gradient(120deg, #f4d976, #d9b830); }
+.tier-badge-low { background: linear-gradient(120deg, #7ed6a5, #3f8f5f); color: #fff; }
+
+.biz-row:hover { transform: translateX(2px); }
+
+.score-glow { position: relative; text-shadow: 0 0 28px var(--glow-color, transparent); }
+
+.signal-chevron {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--ink-soft);
+  transition: transform 0.2s ease;
+}
+.signal-row:hover .signal-chevron { color: var(--lavender); }

@@ -40,23 +40,29 @@ const SIGNAL_INFO = {
 }
 
 // thin, data-journalism-style meter — a hairline track with a tier-colored
-// fill; click to expand a plain-language explanation of what it measures
+// fill; hover (or focus/tap) to reveal what it measures, in a small tooltip
+// that floats over the content instead of pushing the rest of the brief down
 function SignalBar({ name, value }) {
-  const [expanded, setExpanded] = useState(false)
+  const [open, setOpen] = useState(false)
   const color = value >= 0.66 ? '#c0392b' : value >= 0.33 ? '#d9b830' : '#3f8f5f'
   const description = SIGNAL_INFO[name] || 'One of several structural and behavioral indicators used to compute this succession risk score.'
   return (
-    <div style={{ marginBottom: 12 }}>
+    <div
+      className="signal-row"
+      style={{ marginBottom: 12, position: 'relative' }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
       <button
-        onClick={() => setExpanded(v => !v)}
-        className="signal-row"
-        style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: 0, font: 'inherit' }}
-        aria-expanded={expanded}
+        onClick={() => setOpen(v => !v)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'help', padding: 0, font: 'inherit' }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--ink)' }}>
             {name}
-            <span className="signal-chevron" style={{ transform: expanded ? 'rotate(90deg)' : 'none' }}>›</span>
+            <span className="signal-hint">ⓘ</span>
           </span>
           <span className="font-mono" style={{ fontSize: 11.5, color: 'var(--ink-soft)' }}>{Math.round(value * 100)}</span>
         </div>
@@ -64,11 +70,9 @@ function SignalBar({ name, value }) {
           <div style={{ height: '100%', width: `${value * 100}%`, background: color, transition: 'width 0.5s ease' }} />
         </div>
       </button>
-      {expanded && (
-        <div className="fade-in" style={{ fontSize: 11.5, color: 'var(--ink-soft)', marginTop: 7, lineHeight: 1.5 }}>
-          {description}
-        </div>
-      )}
+      <div className={`signal-tooltip${open ? ' visible' : ''}`} role="tooltip">
+        {description}
+      </div>
     </div>
   )
 }

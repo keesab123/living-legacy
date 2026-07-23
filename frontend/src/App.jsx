@@ -77,6 +77,125 @@ function SignalBar({ name, value }) {
   )
 }
 
+function timeAgo(isoString) {
+  const seconds = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000)
+  if (seconds < 60) return 'just now'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days}d ago`
+  return new Date(isoString).toLocaleDateString()
+}
+
+// Local intel a scrape can't pick up — a regular mentioning the owner's
+// retiring, a For Sale sign going up. Stored separately from the scored
+// CSV (routes/comments.py) so it survives every pipeline re-run.
+function CommentSection({ businessName }) {
+  const [comments, setComments] = useState(null)
+  const [author, setAuthor] = useState('')
+  const [text, setText] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    setComments(null)
+    fetch(`${API_BASE}/businesses/comments?business_name=${encodeURIComponent(businessName)}`)
+      .then(r => r.json())
+      .then(setComments)
+      .catch(() => setComments([]))
+  }, [businessName])
+
+  const submit = (e) => {
+    e.preventDefault()
+    if (!text.trim() || submitting) return
+    setSubmitting(true)
+    setError(null)
+    fetch(`${API_BASE}/businesses/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ business_name: businessName, author: author.trim() || undefined, text: text.trim() }),
+    })
+      .then(r => { if (!r.ok) throw new Error('failed'); return r.json() })
+      .then(created => {
+        setComments(prev => [created, ...(prev || [])])
+        setText('')
+      })
+      .catch(() => setError("Couldn't post that — try again."))
+      .finally(() => setSubmitting(false))
+  }
+
+  return (
+    <div style={{ marginTop: 30 }}>
+      <div style={label}>What locals are saying</div>
+      <p style={{ fontSize: 11.5, color: 'var(--ink-soft)', marginTop: 8, lineHeight: 1.4 }}>
+        Heard something a scrape wouldn't catch — a for-sale sign, the owner mentioning retirement? Add it here.
+      </p>
+
+      <form onSubmit={submit} style={{ marginTop: 14 }}>
+        <textarea
+          value={text}
+          onChange={e => setText(e.target.value)}
+          maxLength={500}
+          placeholder="Share what you know…"
+          rows={3}
+          style={{
+            width: '100%', boxSizing: 'border-box', resize: 'vertical', font: 'inherit', fontSize: 13,
+            padding: '8px 10px', border: '1px solid var(--rule)', borderRadius: 3,
+            background: 'var(--paper-dim)', color: 'var(--ink)',
+          }}
+        />
+        <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+          <input
+            value={author}
+            onChange={e => setAuthor(e.target.value)}
+            maxLength={80}
+            placeholder="Name (optional)"
+            style={{
+              flex: 1, font: 'inherit', fontSize: 12.5, padding: '7px 10px',
+              border: '1px solid var(--rule)', borderRadius: 3, background: 'var(--paper-dim)', color: 'var(--ink)',
+            }}
+          />
+          <button
+            type="submit"
+            disabled={!text.trim() || submitting}
+            className="ghost-btn"
+            style={{
+              background: 'var(--ink)', color: 'var(--paper)', fontWeight: 700,
+              fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase',
+              padding: '9px 14px', borderRadius: 2, flexShrink: 0,
+              opacity: !text.trim() || submitting ? 0.5 : 1,
+              cursor: !text.trim() || submitting ? 'default' : 'pointer',
+            }}
+          >
+            {submitting ? 'Posting…' : 'Post'}
+          </button>
+        </div>
+        {error && <div style={{ fontSize: 11.5, color: TIER_COLOR.high, marginTop: 6 }}>{error}</div>}
+      </form>
+
+      <div style={{ marginTop: 16 }}>
+        {comments === null && (
+          <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', fontStyle: 'italic' }}>Loading…</div>
+        )}
+        {comments && comments.length === 0 && (
+          <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', fontStyle: 'italic' }}>Nobody's said anything yet — be the first.</div>
+        )}
+        {comments && comments.map(c => (
+          <div key={c.id} style={{ padding: '11px 0', borderTop: '1px solid var(--rule)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-soft)' }}>
+              <span style={{ fontWeight: 700 }}>{c.author}</span>
+              <span>{timeAgo(c.created_at)}</span>
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--ink)', marginTop: 4, lineHeight: 1.5 }}>{c.text}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const mapEl = useRef(null)
   const map = useRef(null)
@@ -553,6 +672,8 @@ export default function App() {
                       ))}
                     </div>
                   </div>
+
+                  {selected.name && <CommentSection businessName={selected.name} />}
                 </>
               )}
 

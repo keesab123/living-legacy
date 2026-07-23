@@ -50,33 +50,32 @@ def generate_next_steps(row: pd.Series) -> dict:
     if is_high_risk:
         reasons = ", ".join(SIGNAL_INFO[c]["label"] for c in top) or "elevated overall risk"
         programs = ", ".join(dict.fromkeys(SIGNAL_INFO[c]["program"] for c in top)) or "general outreach"
-        city_econ_dev = f"Priority outreach candidate ({reasons}). Suggested program: {programs}."
+        city_econ_dev = f"Worth a call soon. Flagged for {reasons} — {programs} is probably the right fit."
 
     community_org = None
     if is_high_risk:
         community_org = (
-            f"{row['name']} shows high succession risk and isn't enrolled in any transition "
-            "program — route into SCORE mentorship / Alameda County SBDC succession services "
-            "before the business closes rather than after."
+            f"{row['name']} is high-risk and hasn't touched a transition program yet. Get them "
+            "talking to SCORE or the county SBDC now, not after they've already put up a closing sign."
         )
 
     buyer = None
     if is_high_risk and is_owner_occupied:
         buyer = (
-            "Likely inheritable: owner-occupied property with high succession risk and no "
-            "listing found on any marketplace. Worth a direct inquiry."
+            "This one might be worth a direct ask — owner-occupied, high risk, and there's no "
+            "listing anywhere. Nobody may have even offered to buy it yet."
         )
 
     owner = None
     if needs_digital_refresh:
         owner = (
-            "Your online presence hasn't been updated in a while — a free modernized website "
-            "or updated listing photos can be arranged through the city's small business support program."
+            "Your site or listing hasn't been touched in a while. The city runs a free program "
+            "for updated photos and a basic refresh — no cost, just say the word."
         )
 
     high_school_program = (
-        "Digital Apprentice opportunity: this business could use a menu photo shoot, "
-        "Instagram setup, or basic website refresh — a good fit for a student volunteer/service-hours project."
+        "Could use some help online — new photos, an Instagram, maybe a simple site. Good fit "
+        "for a student looking for service hours."
         if needs_digital_refresh else None
     )
 

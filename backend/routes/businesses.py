@@ -28,7 +28,7 @@ RESOURCES = [
         "description": "Federal guidance and loan programs for business ownership transitions.",
     },
     {
-        "name": "SCORE Mentorship — Bay Area Chapter",
+        "name": "SCORE Mentorship, Bay Area Chapter",
         "org": "SCORE",
         "url": "https://www.score.org/find-location/chapter/score-san-francisco-bay-area",
         "description": "Free mentorship from retired executives for small business owners planning exit strategies.",
@@ -141,11 +141,11 @@ def get_business_brief(name: str):
     tier_str = {"high": "high succession risk", "medium": "moderate succession risk", "low": "low succession risk"}.get(tier, "unknown risk")
 
     summary = (
-        f"{row['name']} is a {tier_str} business located at {row['address']} in Fremont, CA. "
-        f"It has been in operation for {years_str} and received a succession risk score of {score_rounded}/100. "
-        f"This score is based on structural signals including license age and SBA program enrollment, "
-        f"and behavioral signals including online review trends and digital presence. "
-        f"This business may benefit from proactive succession planning support."
+        f"{row['name']} is a {tier_str} business at {row['address']}. "
+        f"It's been open for {years_str} and scored {score_rounded}/100 for succession risk. "
+        f"That score comes from things like license age and SBA program enrollment, plus "
+        f"behavioral signals like review trends and how current its online presence is. "
+        f"Worth reaching out about a succession plan before it's too late."
     )
 
     signals = {

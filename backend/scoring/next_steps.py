@@ -50,7 +50,7 @@ def generate_next_steps(row: pd.Series) -> dict:
     if is_high_risk:
         reasons = ", ".join(SIGNAL_INFO[c]["label"] for c in top) or "elevated overall risk"
         programs = ", ".join(dict.fromkeys(SIGNAL_INFO[c]["program"] for c in top)) or "general outreach"
-        city_econ_dev = f"Worth a call soon. Flagged for {reasons} — {programs} is probably the right fit."
+        city_econ_dev = f"Worth a call soon. Flagged for {reasons}, and {programs} is probably the right fit."
 
     community_org = None
     if is_high_risk:
@@ -62,7 +62,7 @@ def generate_next_steps(row: pd.Series) -> dict:
     buyer = None
     if is_high_risk and is_owner_occupied:
         buyer = (
-            "This one might be worth a direct ask — owner-occupied, high risk, and there's no "
+            "This one might be worth a direct ask. It's owner-occupied, high risk, and there's no "
             "listing anywhere. Nobody may have even offered to buy it yet."
         )
 
@@ -70,11 +70,11 @@ def generate_next_steps(row: pd.Series) -> dict:
     if needs_digital_refresh:
         owner = (
             "Your site or listing hasn't been touched in a while. The city runs a free program "
-            "for updated photos and a basic refresh — no cost, just say the word."
+            "for updated photos and a basic refresh. No cost, just say the word."
         )
 
     high_school_program = (
-        "Could use some help online — new photos, an Instagram, maybe a simple site. Good fit "
+        "Could use some help online: new photos, an Instagram, maybe a simple site. Good fit "
         "for a student looking for service hours."
         if needs_digital_refresh else None
     )

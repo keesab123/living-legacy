@@ -81,12 +81,12 @@ function photoUrl(name, width = 480) {
 // (routes/businesses.py get_business_brief) — shown on click so the score
 // isn't just a number, it's auditable
 const SIGNAL_INFO = {
-  'Years in operation': "Newer businesses have had less time to build the community roots, staff, and institutional knowledge that make a smooth handoff easier.",
-  'Lease expiry risk': "A lease nearing its end without a filed renewal raises the chance the business could be displaced before a successor is found.",
-  'Review decline': "A downward trend in review volume or rating is often the earliest public sign of reduced owner engagement or succession stress.",
-  'Website staleness': "An outdated or unmaintained web presence suggests the business isn't actively planning for its next chapter.",
-  'No SBA enrollment': "Businesses that haven't tapped SBA loan or mentorship programs may be missing support that eases ownership transitions.",
-  'Renting (not owner-occupied)': "Owners who rent rather than own their space have less control over long-term continuity, raising succession risk.",
+  'Years in operation': "Newer businesses haven't had time to build the staff, regulars, and know-how that make a handoff easier.",
+  'Lease expiry risk': "If the lease is about to run out and there's no renewal on file, the business could get displaced before anyone finds a successor.",
+  'Review decline': "A drop in reviews or ratings is usually the first public sign that the owner is checking out.",
+  'Website staleness': "A site nobody's updated in years usually means the owner isn't planning for what comes next.",
+  'No SBA enrollment': "Businesses that haven't used an SBA loan or mentorship program might be missing support that makes ownership transitions easier.",
+  'Renting (not owner-occupied)': "Renting instead of owning the property means less control over what happens to the business long term.",
 }
 
 // thin, data-journalism-style meter — a hairline track with a tier-colored
@@ -172,7 +172,7 @@ function CommentSection({ businessName }) {
         setComments(prev => [created, ...(prev || [])])
         setText('')
       })
-      .catch(() => setError("Couldn't post that — try again."))
+      .catch(() => setError("Couldn't post that. Try again."))
       .finally(() => setSubmitting(false))
   }
 
@@ -180,7 +180,7 @@ function CommentSection({ businessName }) {
     <div style={{ marginTop: 30 }}>
       <div style={label}>What locals are saying</div>
       <p style={{ fontSize: 11.5, color: 'var(--ink-soft)', marginTop: 8, lineHeight: 1.4 }}>
-        Heard something a scrape wouldn't catch — a for-sale sign, the owner mentioning retirement? Add it here.
+        Heard something a scrape wouldn't catch, like a for-sale sign or the owner mentioning retirement? Add it here.
       </p>
 
       <form onSubmit={submit} style={{ marginTop: 14 }}>
@@ -230,7 +230,7 @@ function CommentSection({ businessName }) {
           <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', fontStyle: 'italic' }}>Loading…</div>
         )}
         {comments && comments.length === 0 && (
-          <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', fontStyle: 'italic' }}>Nobody's said anything yet — be the first.</div>
+          <div style={{ fontSize: 12.5, color: 'var(--ink-soft)', fontStyle: 'italic' }}>Nobody's said anything yet. Be the first.</div>
         )}
         {comments && comments.map(c => (
           <div key={c.id} style={{ padding: '11px 0', borderTop: '1px solid var(--rule)' }}>
@@ -249,6 +249,7 @@ function CommentSection({ businessName }) {
 export default function App() {
   const mapEl = useRef(null)
   const map = useRef(null)
+  const flyToTimeout = useRef(null)
   const [selected, setSelected] = useState(null)
   const [brief, setBrief] = useState(null)
   const [briefLoading, setBriefLoading] = useState(false)
@@ -278,6 +279,7 @@ export default function App() {
   ), [simulatedBusinesses, timelapseYear])
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [photoOpen, setPhotoOpen] = useState(false)
+  const [aboutOpen, setAboutOpen] = useState(false)
 
   useEffect(() => {
     fetch(`${API_BASE}/businesses?limit=1000`)
@@ -305,7 +307,17 @@ export default function App() {
       .catch(() => setBrief({ error: true }))
       .finally(() => setBriefLoading(false))
     if (map.current && props.lat && props.lng) {
-      map.current.flyTo({ center: [props.lng, props.lat], zoom: 15, duration: 900 })
+      clearTimeout(flyToTimeout.current)
+      // Opening the drawer resizes the map column (width 0 -> DRAWER_WIDTH
+      // over 300ms), and mapbox's own resize keeps re-centering on whatever
+      // point is current *during* that animation. Centering immediately, in
+      // the same tick as the resize starts, means flyTo and the resize fight
+      // over the center and the dot lands off to the side. Wait for the
+      // drawer's CSS transition to finish, then center on the now-final
+      // canvas size.
+      flyToTimeout.current = setTimeout(() => {
+        map.current.flyTo({ center: [props.lng, props.lat], zoom: 15, duration: 600 })
+      }, 320)
     }
   }
 
@@ -317,10 +329,10 @@ export default function App() {
       style: 'mapbox://styles/mapbox/dark-v11',
       center: [-121.9886, 37.5485],
       zoom: 12,
-      minZoom: 11,
+      minZoom: 8,
       maxBounds: [
-        [-122.085, 37.44], // SW — just past Niles/the Fremont hills
-        [-121.86, 37.615], // NE — just past Mission San Jose/Warm Springs
+        [-123.3, 36.9], // SW — past the coast, south of Gilroy
+        [-121.2, 38.9], // NE — past Vallejo/Sacramento delta, north of Napa
       ],
     })
 
@@ -389,6 +401,25 @@ export default function App() {
       })
       map.current.on('mouseleave', 'businesses-circles', () => {
         map.current.getCanvas().style.cursor = ''
+      })
+
+      // A hollow ring around whichever dot is selected — flyTo re-centers
+      // the map, but on a dense block of dots centering alone doesn't tell
+      // you *which* one is the case file that just opened.
+      map.current.addSource('selected-business', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
+      map.current.addLayer({
+        id: 'selected-ring',
+        type: 'circle',
+        source: 'selected-business',
+        paint: {
+          'circle-radius': 14,
+          'circle-color': 'transparent',
+          'circle-stroke-width': 3,
+          'circle-stroke-color': '#f1e6cd',
+          'circle-stroke-opacity': 0,
+          'circle-radius-transition': { duration: 900 },
+          'circle-stroke-opacity-transition': { duration: 300 },
+        },
       })
 
       // Risk hotspots — real DBSCAN clusters computed server-side, not a
@@ -515,6 +546,41 @@ export default function App() {
     return () => ro.disconnect()
   }, [])
 
+  // Move the selected-business ring to whichever dot is open (or clear it).
+  useEffect(() => {
+    if (!map.current) return
+    const apply = () => {
+      const source = map.current.getSource('selected-business')
+      if (!source) return
+      if (selected && selected.lat && selected.lng) {
+        source.setData({
+          type: 'FeatureCollection',
+          features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [selected.lng, selected.lat] }, properties: {} }],
+        })
+        map.current.setPaintProperty('selected-ring', 'circle-stroke-opacity', 0.9)
+      } else {
+        source.setData({ type: 'FeatureCollection', features: [] })
+        map.current.setPaintProperty('selected-ring', 'circle-stroke-opacity', 0)
+      }
+    }
+    if (map.current.getLayer('selected-ring')) apply()
+    else map.current.once('load', apply)
+  }, [selected])
+
+  // A slow pulse on the ring while a dossier is open — draws the eye without
+  // being distracting; stops the moment nothing is selected.
+  useEffect(() => {
+    if (!selected || !map.current) return
+    let big = false
+    const id = setInterval(() => {
+      big = !big
+      if (map.current?.getLayer('selected-ring')) {
+        map.current.setPaintProperty('selected-ring', 'circle-radius', big ? 20 : 14)
+      }
+    }, 900)
+    return () => clearInterval(id)
+  }, [selected])
+
   // Auto-advance while playing; stop at the horizon.
   useEffect(() => {
     if (!timelapsePlaying) return
@@ -532,9 +598,21 @@ export default function App() {
         borderBottom: '1px solid rgba(233,214,173,0.14)', zIndex: 4, position: 'relative',
       }}>
         <div className="font-display gradient-text" style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--cream)', flexShrink: 0 }}>
-          Handoff
+          Keep Fremont Open
         </div>
-        <div style={{ ...label, color: 'var(--cream-soft)', flexShrink: 0 }}>Fremont · Succession Risk Atlas</div>
+        <div style={{ ...label, color: 'var(--cream-soft)', flexShrink: 0 }}>Succession Risk Atlas</div>
+        <button
+          onClick={() => setAboutOpen(v => !v)}
+          className="ghost-btn"
+          style={{
+            width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center',
+            justifyContent: 'center', fontSize: 12, padding: 0, flexShrink: 0,
+            color: 'var(--cream-soft)', border: '1px solid rgba(233,214,173,0.2)',
+          }}
+          aria-label="About this project"
+        >
+          ⓘ
+        </button>
         <div style={{ flex: 1 }} />
         {stats && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 20, fontSize: 12, color: 'var(--cream-soft)', flexShrink: 0 }}>
@@ -544,6 +622,48 @@ export default function App() {
           </div>
         )}
       </div>
+
+      {/* About — collapsed by default so the pitch never competes with the
+          map; opens as a small dropdown right under the info button. */}
+      {aboutOpen && (
+        <div
+          className="no-print fade-up"
+          onClick={() => setAboutOpen(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 10, background: 'rgba(20,16,10,0.5)' }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              position: 'absolute', top: 68, left: 20, width: 420, maxWidth: 'calc(100vw - 40px)',
+              background: 'var(--paper)', borderRadius: 16, boxShadow: '0 24px 70px rgba(0,0,0,0.55)',
+              padding: '20px 22px',
+            }}
+          >
+            <div style={label}>About</div>
+            <p style={{ fontSize: 13.5, lineHeight: 1.6, marginTop: 10, color: 'var(--ink)' }}>
+              Hundreds of immigrant-owned restaurants in Fremont will disappear over the next decade.
+              Not because they failed, but because the ownership transition fails. Parents retire or pass
+              away, their kids became engineers instead of taking over the business, and nobody outside
+              the family ever knew it was available. No buyer, no handoff, no warning.
+            </p>
+            <p style={{ fontSize: 13.5, lineHeight: 1.6, marginTop: 10, color: 'var(--ink)' }}>
+              This map pulls together city license records and live restaurant data to flag succession
+              risk before a closure happens. Each business gets tailored next steps: for city staff,
+              community orgs, potential buyers, and the owner.
+            </p>
+            <button
+              onClick={() => setAboutOpen(false)}
+              className="ghost-btn"
+              style={{
+                marginTop: 14, fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
+                padding: '7px 12px', borderRadius: 4, color: 'var(--ink)',
+              }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* BODY — left registry panel / map canvas / right case-file drawer */}
       <div style={{ display: 'flex', flex: 1, minHeight: 0, position: 'relative' }}>
@@ -652,11 +772,8 @@ export default function App() {
                   padding: '10px 12px', borderRadius: 10,
                 }}
               >
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#6f93a0', flexShrink: 0 }} />
                 {hotspotsOn ? 'Hide' : 'Show'} risk hotspot corridors
-                {clusters.length > 0 && (
-                  <span className="font-mono" style={{ marginLeft: 'auto', color: 'var(--cream-soft)', fontWeight: 500 }}>{clusters.length}</span>
-                )}
+                <span className="font-mono" style={{ marginLeft: 'auto', color: 'var(--cream-soft)', fontWeight: 500 }}>→</span>
               </button>
               <button
                 onClick={() => {
@@ -675,8 +792,8 @@ export default function App() {
                   padding: '10px 12px', borderRadius: 10,
                 }}
               >
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: COHORT_ACCENT, flexShrink: 0 }} />
                 {cohortPanelOpen ? 'Hide' : 'View'} risk by community
+                <span className="font-mono" style={{ marginLeft: 'auto', color: 'var(--cream-soft)', fontWeight: 500 }}>→</span>
               </button>
               <a
                 href="/top-at-risk"
@@ -690,7 +807,6 @@ export default function App() {
                   padding: '10px 12px', borderRadius: 10, textDecoration: 'none', boxSizing: 'border-box',
                 }}
               >
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--lavender)', flexShrink: 0 }} />
                 View shareable Top 10
                 <span className="font-mono" style={{ marginLeft: 'auto', color: 'var(--cream-soft)', fontWeight: 500 }}>→</span>
               </a>
@@ -971,7 +1087,7 @@ export default function App() {
                       <span className="risk-stamp-tier">{selected.risk_tier} risk</span>
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--ink-soft)', lineHeight: 1.55 }}>
-                      Succession risk score, out of 100 — based on the structural and behavioral signals filed below.
+                      Succession risk score out of 100, based on the structural and behavioral signals below.
                     </div>
                   </div>
 
@@ -987,8 +1103,17 @@ export default function App() {
                         {brief.summary}
                       </p>
 
+                      <div style={{ marginTop: 28 }}>
+                        <div style={label}>Signals</div>
+                        <div style={{ marginTop: 12 }}>
+                          {Object.entries(brief.signals).map(([name, value]) => (
+                            <SignalBar key={name} name={name} value={value} />
+                          ))}
+                        </div>
+                      </div>
+
                       {brief.next_steps && Object.keys(brief.next_steps).length > 0 && (
-                        <div style={{ marginTop: 28 }}>
+                        <div style={{ marginTop: 30 }}>
                           <div style={label}>Tailored Next Steps</div>
                           <div style={{ marginTop: 12 }}>
                             {Object.entries(brief.next_steps).map(([audience, text]) => (
@@ -1002,15 +1127,6 @@ export default function App() {
                           </div>
                         </div>
                       )}
-
-                      <div style={{ marginTop: 30 }}>
-                        <div style={label}>Signals</div>
-                        <div style={{ marginTop: 12 }}>
-                          {Object.entries(brief.signals).map(([name, value]) => (
-                            <SignalBar key={name} name={name} value={value} />
-                          ))}
-                        </div>
-                      </div>
 
                       <div style={{ marginTop: 30 }}>
                         <div style={label}>Resources</div>

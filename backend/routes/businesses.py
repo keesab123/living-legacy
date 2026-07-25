@@ -72,6 +72,12 @@ class BusinessSummary(BaseModel):
     risk_score: float
     risk_tier: str
     cuisine_cohort: Optional[str] = None
+    signal_years_in_operation: float
+    signal_lease_expiry: float
+    signal_review_decline: float
+    signal_website_staleness: float
+    signal_no_sba_enrollment: float
+    signal_renting: float
 
 
 class BusinessDetail(BusinessSummary):
@@ -116,7 +122,11 @@ def list_businesses(
     if tier:
         df = df[df["risk_tier"] == tier]
     df = df.head(limit)
-    records = df[["name", "address", "lat", "lng", "risk_score", "risk_tier", "cuisine_cohort"]].to_dict(orient="records")
+    records = df[[
+        "name", "address", "lat", "lng", "risk_score", "risk_tier", "cuisine_cohort",
+        "signal_years_in_operation", "signal_lease_expiry", "signal_review_decline",
+        "signal_website_staleness", "signal_no_sba_enrollment", "signal_renting",
+    ]].to_dict(orient="records")
     return [{k: (None if isinstance(v, float) and (v != v or v == float('inf') or v == float('-inf')) else v) for k, v in r.items()} for r in records]
 
 

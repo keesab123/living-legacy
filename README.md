@@ -47,8 +47,10 @@ A Mapbox map of Fremont restaurants colored by succession risk, laid out as a to
 
 - **Risk hotspot corridors** — real DBSCAN clustering (not a decorative heatmap) that groups nearby high-risk businesses into walkable corridors, since a city can fund one corridor-level program more easily than triaging a hundred individual businesses.
 - **Risk by community** — businesses grouped by cuisine or community lineage instead of geography, so you can see that some immigrant communities are losing a much larger share of their restaurants than others. Cohort is inferred from business name keywords (`backend/ingest/cuisine_cohorts.py`), a maintained heuristic, not a census.
-- **Timelapse** — a forward-looking scenario, not a forecast. Each business's current risk score becomes a simulated annual closure hazard, and playing the timelapse shows dots fading out over a 10-year horizon if nothing changes.
+- **Timelapse** — a forward-looking scenario, not a forecast. Each business's current risk score becomes a simulated annual closure hazard, and playing the timelapse shows dots fading out over a 10-year horizon if nothing changes. Hotspot corridors shrink and fade along with the businesses inside them, so a whole corridor can visibly empty out together instead of just scattered individual dots.
+- **Weight sandbox** — the same six signals, but you set the priorities. Slide any signal's weight up or down and every business re-scores live, client-side, from the raw signal values the API already ships. A city planner might weight lease risk highest, a buyer might care most about digital neglect; same data, different lens, and it's honest about being a "what if," not a replacement for the calibrated default.
 - **Shareable Top 10** — a standalone ranked list at `/top-at-risk`, meant to be screenshotted or handed to a reporter or council member.
+- **Search** — filter the registry list by name or address, useful once you're past a handful of businesses.
 
 Click any business to see:
 - Risk score breakdown, signal by signal

@@ -16,6 +16,7 @@ const TIER_COLOR = {
 
 const TIER_LABEL = { high: 'High', medium: 'Medium', low: 'Low' }
 const COHORT_ACCENT = '#c98f4f'
+const WEIGHTS_ACCENT = '#7a9e5f'
 const CLOSED_COLOR = '#241d14'
 
 // Timelapse — a forward-looking scenario, not a forecast. Each business's
@@ -66,6 +67,35 @@ function simulateClosureYear(key, riskScore) {
   return NEVER_CLOSES
 }
 
+// Weight sandbox — mirrors backend/scoring/risk_scorer.py's Weights
+// defaults and tier thresholds exactly, so "reset" reproduces the server's
+// real score. Recomputed client-side from the raw signal_* values the
+// /api/businesses list already ships, no extra round trip per slider drag.
+const DEFAULT_WEIGHTS = {
+  years_in_operation: 25,
+  lease_expiry: 20,
+  review_decline: 20,
+  website_staleness: 15,
+  no_sba_enrollment: 10,
+  renting: 10,
+}
+const WEIGHT_META = [
+  { key: 'years_in_operation', label: 'Years in operation', signalKey: 'signal_years_in_operation' },
+  { key: 'lease_expiry', label: 'Lease expiry risk', signalKey: 'signal_lease_expiry' },
+  { key: 'review_decline', label: 'Review decline', signalKey: 'signal_review_decline' },
+  { key: 'website_staleness', label: 'Website staleness', signalKey: 'signal_website_staleness' },
+  { key: 'no_sba_enrollment', label: 'No SBA enrollment', signalKey: 'signal_no_sba_enrollment' },
+  { key: 'renting', label: 'Renting (not owner-occupied)', signalKey: 'signal_renting' },
+]
+
+function computeWeightedTier(business, weights) {
+  const totalWeight = WEIGHT_META.reduce((sum, m) => sum + weights[m.key], 0) || 1
+  const weighted = WEIGHT_META.reduce((sum, m) => sum + (business[m.signalKey] ?? 0) * weights[m.key], 0) / totalWeight
+  const risk_score = Math.round(weighted * 1000) / 10
+  const risk_tier = weighted >= 0.42 ? 'high' : weighted >= 0.32 ? 'medium' : 'low'
+  return { risk_score, risk_tier }
+}
+
 const label = {
   fontSize: 10,
   fontWeight: 600,
@@ -81,7 +111,7 @@ function photoUrl(name, width = 480) {
 // (routes/businesses.py get_business_brief) — shown on click so the score
 // isn't just a number, it's auditable
 const SIGNAL_INFO = {
-  'Years in operation': "Newer businesses haven't had time to build the staff, regulars, and know-how that make a handoff easier.",
+  'Years in operation': "The longer a business has run under the same owner, the more likely that owner is nearing retirement without a succession plan lined up.",
   'Lease expiry risk': "If the lease is about to run out and there's no renewal on file, the business could get displaced before anyone finds a successor.",
   'Review decline': "A drop in reviews or ratings is usually the first public sign that the owner is checking out.",
   'Website staleness': "A site nobody's updated in years usually means the owner isn't planning for what comes next.",
@@ -264,19 +294,55 @@ export default function App() {
   const [selectedCohort, setSelectedCohort] = useState(null)
   const [timelapseYear, setTimelapseYear] = useState(TIMELAPSE_START_YEAR)
   const [timelapsePlaying, setTimelapsePlaying] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [weights, setWeights] = useState(DEFAULT_WEIGHTS)
+  const [weightsPanelOpen, setWeightsPanelOpen] = useState(false)
+  const isCustomWeights = WEIGHT_META.some(m => weights[m.key] !== DEFAULT_WEIGHTS[m.key])
+
+  // Re-scored with whatever the weight sliders currently say, using the raw
+  // signal_* values every business already carries. Identity when the
+  // sliders are at their defaults, so nothing changes until you touch one.
+  const customBusinesses = useMemo(() => {
+    if (!isCustomWeights) return businesses
+    return businesses
+      .map(b => ({ ...b, ...computeWeightedTier(b, weights) }))
+      .sort((a, b) => b.risk_score - a.risk_score)
+  }, [businesses, weights, isCustomWeights])
 
   // Each business's simulated closure year, computed once per fetch — stable
   // across scrubbing/play so the same dots vanish in the same order every time.
   const simulatedBusinesses = useMemo(() => (
-    businesses.map(b => ({
+    customBusinesses.map(b => ({
       ...b,
       sim_closure_year: simulateClosureYear(`${b.name}|${b.address}`, b.risk_score),
     }))
-  ), [businesses])
+  ), [customBusinesses])
 
   const timelapseClosedCount = useMemo(() => (
     simulatedBusinesses.filter(b => b.sim_closure_year <= timelapseYear).length
   ), [simulatedBusinesses, timelapseYear])
+
+  // Each hotspot corridor's open-business count as of the current timelapse
+  // year — the corridor's own risk_score/tier come from the live pipeline,
+  // not the sandbox, so this only ever reacts to the timelapse, not the
+  // weight sliders. A corridor with 0 open businesses fades out entirely.
+  const timelapseClusters = useMemo(() => {
+    if (!clusters.length) return clusters
+    const closureByKey = new Map(simulatedBusinesses.map(b => [`${b.name}|${b.address}`, b.sim_closure_year]))
+    return clusters.map(c => {
+      const openCount = c.businesses.filter(b => {
+        const closureYear = closureByKey.get(`${b.name}|${b.address}`)
+        return closureYear == null || closureYear > timelapseYear
+      }).length
+      return { ...c, open_count: openCount }
+    })
+  }, [clusters, simulatedBusinesses, timelapseYear])
+
+  const filteredBusinesses = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return customBusinesses
+    return customBusinesses.filter(b => b.name.toLowerCase().includes(q) || b.address.toLowerCase().includes(q))
+  }, [customBusinesses, searchQuery])
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [photoOpen, setPhotoOpen] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
@@ -432,12 +498,19 @@ export default function App() {
         source: 'risk-clusters',
         layout: { visibility: 'none' },
         paint: {
-          'circle-radius': ['interpolate', ['linear'], ['get', 'business_count'], 3, 22, 21, 60],
+          // Sized and faded by open_count, not the static business_count —
+          // a corridor shrinks and fades as the timelapse closes the
+          // businesses inside it, so the whole corridor empties out
+          // together instead of just the individual dots underneath it.
+          'circle-radius': ['interpolate', ['linear'], ['get', 'open_count'], 3, 22, 21, 60],
           'circle-color': '#6f93a0',
-          'circle-opacity': 0.22,
+          'circle-opacity': ['case', ['==', ['get', 'open_count'], 0], 0, 0.22],
           'circle-stroke-width': 1.5,
           'circle-stroke-color': '#6f93a0',
-          'circle-stroke-opacity': 0.7,
+          'circle-stroke-opacity': ['case', ['==', ['get', 'open_count'], 0], 0, 0.7],
+          'circle-radius-transition': { duration: 700 },
+          'circle-opacity-transition': { duration: 700 },
+          'circle-stroke-opacity-transition': { duration: 700 },
         },
       })
       map.current.addLayer({
@@ -446,11 +519,15 @@ export default function App() {
         source: 'risk-clusters',
         layout: {
           visibility: 'none',
-          'text-field': ['get', 'business_count'],
+          'text-field': ['get', 'open_count'],
           'text-size': 14,
           'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
         },
-        paint: { 'text-color': '#fbf9f4' },
+        paint: {
+          'text-color': '#fbf9f4',
+          'text-opacity': ['case', ['==', ['get', 'open_count'], 0], 0, 1],
+          'text-opacity-transition': { duration: 700 },
+        },
       })
 
       map.current.on('click', 'risk-clusters-circles', e => {
@@ -462,6 +539,7 @@ export default function App() {
           businesses: typeof props.businesses === 'string' ? JSON.parse(props.businesses) : props.businesses,
         })
         setCohortPanelOpen(false)
+        setWeightsPanelOpen(false)
       })
       map.current.on('mouseenter', 'risk-clusters-circles', () => {
         map.current.getCanvas().style.cursor = 'pointer'
@@ -472,14 +550,37 @@ export default function App() {
     })
   }, [simulatedBusinesses])
 
+  // The map-init effect above only runs once (it bails out as soon as
+  // map.current exists), so it never sees later changes to
+  // simulatedBusinesses — weight-slider or timelapse-driven risk_tier/score
+  // changes need their own push to the live source, same pattern as the
+  // risk-clusters source below.
+  useEffect(() => {
+    if (!map.current) return
+    const source = map.current.getSource('businesses')
+    if (!source) return
+    source.setData({
+      type: 'FeatureCollection',
+      features: simulatedBusinesses
+        .filter(b => b.lat && b.lng)
+        .map(b => ({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [b.lng, b.lat] },
+          properties: b,
+        })),
+    })
+  }, [simulatedBusinesses])
+
   // Feed the risk-clusters source once both the map and the fetched
   // clusters are ready — they resolve independently and in either order.
+  // Also re-feeds whenever the timelapse advances, since open_count above
+  // is what actually drives the corridor's radius/opacity on the map.
   useEffect(() => {
-    if (!map.current || !clusters.length) return
+    if (!map.current || !timelapseClusters.length) return
     const setData = () => {
       map.current.getSource('risk-clusters')?.setData({
         type: 'FeatureCollection',
-        features: clusters.map(c => ({
+        features: timelapseClusters.map(c => ({
           type: 'Feature',
           geometry: { type: 'Point', coordinates: [c.centroid_lng, c.centroid_lat] },
           properties: c,
@@ -488,7 +589,7 @@ export default function App() {
     }
     if (map.current.isStyleLoaded()) setData()
     else map.current.once('load', setData)
-  }, [clusters])
+  }, [timelapseClusters])
 
   useEffect(() => {
     if (!map.current) return
@@ -695,8 +796,18 @@ export default function App() {
             <div style={{ padding: '16px 44px 12px 20px', flexShrink: 0, borderBottom: '1px solid rgba(233,214,173,0.1)' }}>
               <div style={{ ...label, color: 'var(--lavender)' }}>Registry</div>
               <div style={{ fontSize: 13, color: 'var(--cream)', marginTop: 4, fontWeight: 600 }}>
-                {businesses.length || '—'} Fremont restaurants tracked
+                {searchQuery.trim() ? `${filteredBusinesses.length} of ${businesses.length}` : (businesses.length || '—')} Fremont restaurants tracked
               </div>
+              <input
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search by name or address…"
+                style={{
+                  width: '100%', marginTop: 10, font: 'inherit', fontSize: 12.5, padding: '8px 10px',
+                  border: '1px solid rgba(233,214,173,0.16)', borderRadius: 6,
+                  background: 'rgba(255,255,255,0.04)', color: 'var(--cream)',
+                }}
+              />
             </div>
 
             <div className="sidebar-scroll" style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
@@ -709,7 +820,12 @@ export default function App() {
                   </div>
                 </div>
               ))}
-              {businesses.map(b => {
+              {businesses.length > 0 && filteredBusinesses.length === 0 && (
+                <div style={{ padding: '16px 20px', fontSize: 12.5, color: 'var(--cream-soft)', fontStyle: 'italic' }}>
+                  No businesses match "{searchQuery}".
+                </div>
+              )}
+              {filteredBusinesses.map(b => {
                 const isSelected = selected && selected.name === b.name
                 return (
                   <button
@@ -782,6 +898,7 @@ export default function App() {
                     return !v
                   })
                   setSelectedCluster(null)
+                  setWeightsPanelOpen(false)
                 }}
                 className="ghost-btn hotspot-toggle"
                 style={{
@@ -793,6 +910,26 @@ export default function App() {
                 }}
               >
                 {cohortPanelOpen ? 'Hide' : 'View'} risk by community
+                <span className="font-mono" style={{ marginLeft: 'auto', color: 'var(--cream-soft)', fontWeight: 500 }}>→</span>
+              </button>
+              <button
+                onClick={() => {
+                  setWeightsPanelOpen(v => !v)
+                  setCohortPanelOpen(false)
+                  setSelectedCohort(null)
+                  setSelectedCluster(null)
+                }}
+                className="ghost-btn hotspot-toggle"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, width: '100%', marginTop: 8,
+                  background: weightsPanelOpen ? 'rgba(122,158,95,0.2)' : isCustomWeights ? 'rgba(122,158,95,0.1)' : 'rgba(255,255,255,0.04)',
+                  borderColor: weightsPanelOpen || isCustomWeights ? WEIGHTS_ACCENT : 'rgba(255,255,255,0.08)',
+                  color: 'var(--cream)', fontSize: 12, fontWeight: 600,
+                  padding: '10px 12px', borderRadius: 10,
+                }}
+              >
+                {weightsPanelOpen ? 'Hide' : 'Adjust'} risk weights
+                {isCustomWeights && <span className="font-mono" style={{ color: WEIGHTS_ACCENT, fontWeight: 700 }}>●</span>}
                 <span className="font-mono" style={{ marginLeft: 'auto', color: 'var(--cream-soft)', fontWeight: 500 }}>→</span>
               </button>
               <a
@@ -900,6 +1037,11 @@ export default function App() {
                     <div className="font-display" style={{ fontSize: 20, fontWeight: 600, marginTop: 4 }}>
                       {selectedCluster.business_count} businesses
                     </div>
+                    {selectedCluster.open_count != null && selectedCluster.open_count < selectedCluster.business_count && (
+                      <div className="font-mono" style={{ fontSize: 11, color: WEIGHTS_ACCENT, marginTop: 2 }}>
+                        {selectedCluster.open_count} still open at year {timelapseYear}
+                      </div>
+                    )}
                   </div>
                   <button
                     onClick={() => setSelectedCluster(null)}
@@ -1000,6 +1142,74 @@ export default function App() {
                     </button>
                   )
                 })}
+              </div>
+            </div>
+          )}
+
+          {/* Weight sandbox — same six signals, your own priorities. Recomputes
+              client-side from the raw signal_* values already shipped per
+              business, so the map recolors instantly with no round trip. */}
+          {!selected && !selectedCluster && !cohortPanelOpen && weightsPanelOpen && (
+            <div className="no-print fade-up" style={{
+              position: 'absolute', right: 16, bottom: 132, width: 340, maxHeight: '65%',
+              background: 'var(--paper)', borderRadius: 20, boxShadow: '0 24px 70px rgba(0,0,0,0.55)',
+              zIndex: 3, display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            }}>
+              <div style={{ padding: '16px 18px', borderBottom: `2px solid ${WEIGHTS_ACCENT}`, flexShrink: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={label}>Weight Sandbox</div>
+                    <div className="font-display" style={{ fontSize: 18, fontWeight: 600, marginTop: 4 }}>
+                      Same signals, your priorities
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setWeightsPanelOpen(false)}
+                    className="ghost-btn"
+                    style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '5px 9px', borderRadius: 6 }}
+                  >
+                    Close
+                  </button>
+                </div>
+                <div style={{ fontSize: 12.5, color: 'var(--ink)', marginTop: 8, lineHeight: 1.5, fontWeight: 600 }}>
+                  {customBusinesses.filter(b => b.risk_tier === 'high').length} high-risk under these weights
+                  <span style={{ fontWeight: 400, color: 'var(--ink-soft)' }}> (of {customBusinesses.length})</span>
+                </div>
+              </div>
+              <div className="paper-scroll" style={{ overflowY: 'auto', padding: '12px 18px' }}>
+                {WEIGHT_META.map(m => (
+                  <div key={m.key} style={{ marginBottom: 14 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
+                      <span style={{ color: 'var(--ink)' }}>{m.label}</span>
+                      <span className="font-mono" style={{ color: 'var(--ink-soft)' }}>{weights[m.key]}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={weights[m.key]}
+                      onChange={e => setWeights(w => ({ ...w, [m.key]: Number(e.target.value) }))}
+                      style={{ width: '100%', accentColor: WEIGHTS_ACCENT }}
+                    />
+                  </div>
+                ))}
+                <button
+                  onClick={() => setWeights(DEFAULT_WEIGHTS)}
+                  disabled={!isCustomWeights}
+                  className="ghost-btn"
+                  style={{
+                    width: '100%', marginTop: 4, fontSize: 11, fontWeight: 700, letterSpacing: '0.06em',
+                    textTransform: 'uppercase', padding: '9px 12px', borderRadius: 8, color: 'var(--ink)',
+                    opacity: isCustomWeights ? 1 : 0.4,
+                  }}
+                >
+                  Reset to default weights
+                </button>
+                <p style={{ fontSize: 11, color: 'var(--ink-soft)', marginTop: 10, lineHeight: 1.4 }}>
+                  A city planner might care most about lease risk, a buyer about digital neglect. Same
+                  data, different priorities, and the map updates live as you drag.
+                </p>
               </div>
             </div>
           )}

@@ -682,13 +682,17 @@ export default function App() {
                 href="/top-at-risk"
                 target="_blank"
                 rel="noreferrer"
-                className="top-link"
+                className="ghost-btn hotspot-toggle"
                 style={{
-                  display: 'block', marginTop: 12, fontSize: 11.5, fontWeight: 600,
-                  color: 'var(--lavender)', textDecoration: 'none', letterSpacing: '0.02em',
+                  display: 'flex', alignItems: 'center', gap: 8, width: '100%', marginTop: 8,
+                  background: 'rgba(255,255,255,0.04)', borderColor: 'rgba(255,255,255,0.08)',
+                  color: 'var(--cream)', fontSize: 12, fontWeight: 600,
+                  padding: '10px 12px', borderRadius: 10, textDecoration: 'none', boxSizing: 'border-box',
                 }}
               >
-                View shareable Top 10 <span className="top-link-arrow">→</span>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--lavender)', flexShrink: 0 }} />
+                View shareable Top 10
+                <span className="font-mono" style={{ marginLeft: 'auto', color: 'var(--cream-soft)', fontWeight: 500 }}>→</span>
               </a>
             </div>
           </div>

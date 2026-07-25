@@ -168,13 +168,6 @@ html, body {
   border-color: var(--lavender) !important;
 }
 
-.top-link {
-  transition: color 0.15s ease, gap 0.15s ease;
-}
-.top-link:hover { color: var(--cream) !important; }
-.top-link:hover .top-link-arrow { transform: translateX(3px); }
-.top-link-arrow { display: inline-block; transition: transform 0.15s ease; }
-
 .top-at-risk-row:hover { background: rgba(34, 31, 25, 0.035); }
 @media (prefers-color-scheme: dark) {
   .top-at-risk-row:hover { background: rgba(255, 255, 255, 0.03); }

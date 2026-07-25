@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 
@@ -15,6 +15,56 @@ const TIER_COLOR = {
 }
 
 const TIER_LABEL = { high: 'High', medium: 'Medium', low: 'Low' }
+const COHORT_ACCENT = '#c98f4f'
+const CLOSED_COLOR = '#241d14'
+
+// Timelapse — a forward-looking scenario, not a forecast. Each business's
+// current risk score becomes an annual closure hazard; a seeded per-business
+// RNG (stable across reloads, so the demo tells the same story every time)
+// draws whether/when it closes within the horizon. Purely illustrative: the
+// hazard curve is invented to make the *shape* of concentrated risk visible,
+// not a claim about any specific business's odds.
+const TIMELAPSE_START_YEAR = new Date().getFullYear()
+const TIMELAPSE_HORIZON_YEARS = 10
+const TIMELAPSE_END_YEAR = TIMELAPSE_START_YEAR + TIMELAPSE_HORIZON_YEARS
+
+function hashStringToInt(str) {
+  let h = 2166136261
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return h >>> 0
+}
+
+function mulberry32(seed) {
+  let a = seed
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+function annualHazard(riskScore) {
+  const s = riskScore / 100
+  return Math.min(0.35, Math.max(0.01, s * s * 0.35))
+}
+
+// Sentinel rather than null for "survives the horizon" — keeps the mapbox-gl
+// paint expression's inferred property type a plain number across every
+// feature, since a null/number mix fails its expression type-checker.
+const NEVER_CLOSES = 9999
+
+function simulateClosureYear(key, riskScore) {
+  const rng = mulberry32(hashStringToInt(key) ^ 0x9e3779b9)
+  const hazard = annualHazard(riskScore)
+  for (let offset = 1; offset <= TIMELAPSE_HORIZON_YEARS; offset++) {
+    if (rng() < hazard) return TIMELAPSE_START_YEAR + offset
+  }
+  return NEVER_CLOSES
+}
 
 const label = {
   fontSize: 10,
@@ -102,8 +152,8 @@ function CommentSection({ businessName }) {
   useEffect(() => {
     setComments(null)
     fetch(`${API_BASE}/businesses/comments?business_name=${encodeURIComponent(businessName)}`)
-      .then(r => r.json())
-      .then(setComments)
+      .then(r => { if (!r.ok) throw new Error('failed'); return r.json() })
+      .then(data => setComments(Array.isArray(data) ? data : []))
       .catch(() => setComments([]))
   }, [businessName])
 
@@ -207,6 +257,25 @@ export default function App() {
   const [clusters, setClusters] = useState([])
   const [hotspotsOn, setHotspotsOn] = useState(false)
   const [selectedCluster, setSelectedCluster] = useState(null)
+  const [cohorts, setCohorts] = useState([])
+  const [citywidePctHigh, setCitywidePctHigh] = useState(null)
+  const [cohortPanelOpen, setCohortPanelOpen] = useState(false)
+  const [selectedCohort, setSelectedCohort] = useState(null)
+  const [timelapseYear, setTimelapseYear] = useState(TIMELAPSE_START_YEAR)
+  const [timelapsePlaying, setTimelapsePlaying] = useState(false)
+
+  // Each business's simulated closure year, computed once per fetch — stable
+  // across scrubbing/play so the same dots vanish in the same order every time.
+  const simulatedBusinesses = useMemo(() => (
+    businesses.map(b => ({
+      ...b,
+      sim_closure_year: simulateClosureYear(`${b.name}|${b.address}`, b.risk_score),
+    }))
+  ), [businesses])
+
+  const timelapseClosedCount = useMemo(() => (
+    simulatedBusinesses.filter(b => b.sim_closure_year <= timelapseYear).length
+  ), [simulatedBusinesses, timelapseYear])
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [photoOpen, setPhotoOpen] = useState(false)
 
@@ -220,6 +289,9 @@ export default function App() {
     fetch(`${API_BASE}/risk-clusters?tier=high`)
       .then(r => r.json())
       .then(d => setClusters(d.clusters))
+    fetch(`${API_BASE}/cohorts`)
+      .then(r => r.json())
+      .then(d => { setCohorts(d.cohorts); setCitywidePctHigh(d.citywide_pct_high_risk) })
   }, [])
 
   const selectBusiness = (props) => {
@@ -238,17 +310,17 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (map.current || !businesses.length) return
+    if (map.current || !simulatedBusinesses.length) return
 
     map.current = new mapboxgl.Map({
       container: mapEl.current,
       style: 'mapbox://styles/mapbox/dark-v11',
       center: [-121.9886, 37.5485],
       zoom: 12,
-      minZoom: 8,
+      minZoom: 11,
       maxBounds: [
-        [-123.3, 36.9], // SW — past the coast, south of Gilroy
-        [-121.2, 38.9], // NE — past Vallejo/Sacramento delta, north of Napa
+        [-122.085, 37.44], // SW — just past Niles/the Fremont hills
+        [-121.86, 37.615], // NE — just past Mission San Jose/Warm Springs
       ],
     })
 
@@ -265,7 +337,7 @@ export default function App() {
     map.current.on('load', () => {
       const geojson = {
         type: 'FeatureCollection',
-        features: businesses
+        features: simulatedBusinesses
           .filter(b => b.lat && b.lng)
           .map(b => ({
             type: 'Feature',
@@ -299,6 +371,12 @@ export default function App() {
           'circle-opacity': 0.95,
           'circle-stroke-width': 1.25,
           'circle-stroke-color': '#1a1a1a',
+          // A closed dot fades and shrinks out instead of snapping away —
+          // matters most during timelapse playback, where paint properties
+          // change every tick.
+          'circle-opacity-transition': { duration: 700 },
+          'circle-radius-transition': { duration: 700 },
+          'circle-stroke-opacity-transition': { duration: 700 },
         },
       })
 
@@ -352,6 +430,7 @@ export default function App() {
           ...props,
           businesses: typeof props.businesses === 'string' ? JSON.parse(props.businesses) : props.businesses,
         })
+        setCohortPanelOpen(false)
       })
       map.current.on('mouseenter', 'risk-clusters-circles', () => {
         map.current.getCanvas().style.cursor = 'pointer'
@@ -360,7 +439,7 @@ export default function App() {
         map.current.getCanvas().style.cursor = ''
       })
     })
-  }, [businesses])
+  }, [simulatedBusinesses])
 
   // Feed the risk-clusters source once both the map and the fetched
   // clusters are ready — they resolve independently and in either order.
@@ -391,349 +470,582 @@ export default function App() {
     else map.current.once('load', apply)
   }, [hotspotsOn])
 
-  return (
-    <div className="app-shell" style={{ position: 'relative', width: '100%', height: '100%', background: 'var(--map-bg)' }}>
-      {/* Full-bleed persistent Mapbox instance — the canvas the whole app sits on */}
-      <div ref={mapEl} className="no-print" style={{ position: 'fixed', inset: 0, zIndex: 0 }} />
+  // Combined repaint — community lens and timelapse both recolor the same
+  // layer, so they're driven from one effect to avoid one clobbering the
+  // other. Timelapse takes precedence: a closed dot shrinks to nothing
+  // regardless of which cohort is highlighted.
+  useEffect(() => {
+    if (!map.current) return
+    const closedCondition = ['<=', ['get', 'sim_closure_year'], timelapseYear]
+    // "zoom" is only valid as the direct input of a top-level step/interpolate
+    // expression — it can't be nested inside a "case". So the closed check has
+    // to live *inside* each interpolate stop (as the stop's output), not wrap
+    // the interpolate itself.
+    const radius = [
+      'interpolate', ['linear'], ['zoom'],
+      9, ['case', closedCondition, 0, ['match', ['get', 'risk_tier'], 'high', 3.5, 'medium', 2.75, 2.25]],
+      13, ['case', closedCondition, 0, ['match', ['get', 'risk_tier'], 'high', 8, 'medium', 5.5, 4]],
+      16, ['case', closedCondition, 0, ['match', ['get', 'risk_tier'], 'high', 12, 'medium', 8, 6]],
+    ]
+    const liveColor = selectedCohort
+      ? ['case', ['==', ['get', 'cuisine_cohort'], selectedCohort], COHORT_ACCENT, '#3a352c']
+      : ['match', ['get', 'risk_tier'], 'high', TIER_COLOR.high, 'medium', TIER_COLOR.medium, 'low', TIER_COLOR.low, '#8a8578']
+    const liveOpacity = selectedCohort
+      ? ['case', ['==', ['get', 'cuisine_cohort'], selectedCohort], 0.95, 0.18]
+      : 0.95
 
-      {/* Sidebar — a bento stack of independent floating glass cards, not one monolithic panel */}
-      <div className={`no-print bento-stack${sidebarCollapsed ? ' collapsed' : ''}`} style={{
-        position: 'absolute', top: 16, left: 16, bottom: 16, width: SIDEBAR_WIDTH,
-        display: 'flex', flexDirection: 'column', gap: 12, zIndex: 2,
-        transition: 'transform 0.3s cubic-bezier(.2,.8,.2,1)',
-        transform: sidebarCollapsed ? `translateX(calc(-100% - 16px + 44px))` : 'translateX(0)',
+    const apply = () => {
+      map.current.setPaintProperty('businesses-circles', 'circle-radius', radius)
+      map.current.setPaintProperty('businesses-circles', 'circle-color', ['case', closedCondition, CLOSED_COLOR, liveColor])
+      map.current.setPaintProperty('businesses-circles', 'circle-opacity', ['case', closedCondition, 0, liveOpacity])
+      map.current.setPaintProperty('businesses-circles', 'circle-stroke-opacity', ['case', closedCondition, 0, 1])
+    }
+    if (map.current.getLayer('businesses-circles')) apply()
+    else map.current.once('load', apply)
+  }, [selectedCohort, timelapseYear])
+
+  // The map now lives in a real flex column (not a full-viewport overlay),
+  // so its container's pixel size changes whenever the left panel collapses
+  // or the right drawer opens/closes — mapbox-gl doesn't detect that on its
+  // own and needs an explicit resize() or the canvas goes stale/blurry.
+  useEffect(() => {
+    if (!mapEl.current) return
+    const ro = new ResizeObserver(() => map.current?.resize())
+    ro.observe(mapEl.current)
+    return () => ro.disconnect()
+  }, [])
+
+  // Auto-advance while playing; stop at the horizon.
+  useEffect(() => {
+    if (!timelapsePlaying) return
+    if (timelapseYear >= TIMELAPSE_END_YEAR) { setTimelapsePlaying(false); return }
+    const id = setTimeout(() => setTimelapseYear(y => Math.min(y + 1, TIMELAPSE_END_YEAR)), 1100)
+    return () => clearTimeout(id)
+  }, [timelapsePlaying, timelapseYear])
+
+  return (
+    <div className="app-shell" style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', background: 'var(--map-bg)' }}>
+      {/* TOP BAR — brand + citywide headline stats, pinned above the three-column body */}
+      <div className="no-print" style={{
+        flexShrink: 0, height: 58, display: 'flex', alignItems: 'center', gap: 18,
+        padding: '0 20px', background: 'var(--sidebar)',
+        borderBottom: '1px solid rgba(233,214,173,0.14)', zIndex: 4, position: 'relative',
       }}>
-        <div className="glass-card" style={{ padding: '22px 22px 20px', color: 'var(--cream)', position: 'relative', flexShrink: 0 }}>
-          <div className="registry-tab"><span>REGISTRY</span></div>
+        <div className="font-display gradient-text" style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--cream)', flexShrink: 0 }}>
+          Handoff
+        </div>
+        <div style={{ ...label, color: 'var(--cream-soft)', flexShrink: 0 }}>Fremont · Succession Risk Atlas</div>
+        <div style={{ flex: 1 }} />
+        {stats && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 20, fontSize: 12, color: 'var(--cream-soft)', flexShrink: 0 }}>
+            <span><span className="font-mono gradient-text-warm" style={{ fontWeight: 700, fontSize: 15 }}>{stats.high_risk_count}</span> high-risk</span>
+            <span>~{stats.estimated_jobs_at_risk.toLocaleString()} jobs at risk</span>
+            <span>${(stats.estimated_annual_revenue_at_risk / 1_000_000).toFixed(0)}M/yr at risk</span>
+          </div>
+        )}
+      </div>
+
+      {/* BODY — left registry panel / map canvas / right case-file drawer */}
+      <div style={{ display: 'flex', flex: 1, minHeight: 0, position: 'relative' }}>
+
+        {/* LEFT PANEL — scrollable registry list, collapsible to a thin rail */}
+        <div className="no-print" style={{
+          width: sidebarCollapsed ? 44 : SIDEBAR_WIDTH, flexShrink: 0, position: 'relative',
+          background: 'var(--sidebar)', borderRight: '1px solid rgba(233,214,173,0.14)',
+          overflow: 'hidden', transition: 'width 0.25s cubic-bezier(.2,.8,.2,1)',
+        }}>
           <button
             onClick={() => setSidebarCollapsed(v => !v)}
             className="ghost-btn collapse-btn"
             style={{
-              position: 'absolute', top: 18, right: 16, width: 28, height: 28, borderRadius: '50%',
+              position: 'absolute', top: 12, right: 8, width: 28, height: 28, borderRadius: '50%',
               display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13,
-              color: 'var(--cream)', padding: 0,
+              color: 'var(--cream)', padding: 0, zIndex: 2,
             }}
-            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-label={sidebarCollapsed ? 'Expand list' : 'Collapse list'}
           >
             {sidebarCollapsed ? '›' : '‹'}
           </button>
-          <div className="sidebar-fade">
-            <div className="font-display gradient-text" style={{ fontSize: 27, fontWeight: 700, letterSpacing: '-0.02em' }}>
-              Handoff
-            </div>
-            <div style={{ ...label, marginTop: 8, color: 'var(--cream-soft)' }}>Fremont · Succession Risk Atlas</div>
 
-            {stats && (
-              <div className="stat-tile" style={{ marginTop: 16 }}>
-                <div className="font-mono gradient-text-warm" style={{ fontSize: 40, fontWeight: 700, lineHeight: 1 }}>
-                  {stats.high_risk_count}
-                </div>
-                <div style={{ fontSize: 12.5, color: 'var(--cream)', marginTop: 6, fontWeight: 600, lineHeight: 1.4 }}>
-                  Fremont restaurants at high succession risk
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--cream-soft)', marginTop: 8, lineHeight: 1.5 }}>
-                  ~{stats.estimated_jobs_at_risk.toLocaleString()} jobs · ${(stats.estimated_annual_revenue_at_risk / 1_000_000).toFixed(0)}M/yr could disappear without intervention.
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="glass-card sidebar-scroll sidebar-fade" style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
-          {businesses.length === 0 && Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 16px' }}>
-              <div className="skeleton" style={{ width: 40, height: 40, borderRadius: 10, flexShrink: 0 }} />
-              <div style={{ flex: 1 }}>
-                <div className="skeleton" style={{ height: 12, width: `${60 + (i % 3) * 10}%`, borderRadius: 4 }} />
-                <div className="skeleton" style={{ height: 10, width: '40%', borderRadius: 4, marginTop: 6 }} />
+          <div style={{
+            width: SIDEBAR_WIDTH, height: '100%', display: 'flex', flexDirection: 'column',
+            opacity: sidebarCollapsed ? 0 : 1, transition: 'opacity 0.15s ease',
+            pointerEvents: sidebarCollapsed ? 'none' : 'auto',
+          }}>
+            <div style={{ padding: '16px 44px 12px 20px', flexShrink: 0, borderBottom: '1px solid rgba(233,214,173,0.1)' }}>
+              <div style={{ ...label, color: 'var(--lavender)' }}>Registry</div>
+              <div style={{ fontSize: 13, color: 'var(--cream)', marginTop: 4, fontWeight: 600 }}>
+                {businesses.length || '—'} Fremont restaurants tracked
               </div>
             </div>
-          ))}
-          {businesses.map(b => {
-            const isSelected = selected && selected.name === b.name
-            return (
-              <button
-                key={`${b.name}-${b.address}`}
-                onClick={() => selectBusiness(b)}
-                className="biz-row"
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 12, width: 'calc(100% - 16px)', textAlign: 'left',
-                  margin: '2px 8px',
-                  background: isSelected ? 'rgba(111,147,160,0.18)' : 'transparent',
-                  color: 'var(--cream)', font: 'inherit',
-                  border: 'none', borderRadius: 12,
-                  cursor: 'pointer', padding: '9px 10px',
-                  opacity: selected && !isSelected ? 0.42 : 1,
-                  transition: 'opacity 0.2s ease, background 0.15s ease, transform 0.15s ease',
-                }}
-              >
-                <img
-                  src={photoUrl(b.name, 96)}
-                  alt=""
-                  loading="lazy"
-                  onError={e => { e.target.style.visibility = 'hidden' }}
-                  onLoad={e => { e.target.style.opacity = 1 }}
-                  style={{ width: 42, height: 42, objectFit: 'cover', borderRadius: 10, flexShrink: 0, background: 'var(--paper-dim)', opacity: 0 }}
-                />
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div className="ledger-row">
-                    <span style={{
-                      fontSize: 13, fontWeight: 600, color: '#fbf9f4', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 1,
-                    }}>{b.name}</span>
-                    <span className="ledger-leader" />
-                    <span className={`tier-badge tier-badge-${b.risk_tier}`}>
-                      <span className="font-mono">{Math.round(b.risk_score)}</span>
-                    </span>
+
+            <div className="sidebar-scroll" style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
+              {businesses.length === 0 && Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 16px' }}>
+                  <div className="skeleton" style={{ width: 40, height: 40, borderRadius: 10, flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <div className="skeleton" style={{ height: 12, width: `${60 + (i % 3) * 10}%`, borderRadius: 4 }} />
+                    <div className="skeleton" style={{ height: 10, width: '40%', borderRadius: 4, marginTop: 6 }} />
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--cream-soft)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.address}</div>
                 </div>
-              </button>
-            )
-          })}
-        </div>
-
-        <div className="glass-card sidebar-fade" style={{ padding: '16px 20px', flexShrink: 0 }}>
-          <div style={{ display: 'flex', gap: 16 }}>
-            {['high', 'medium', 'low'].map(tier => (
-              <div key={tier} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: TIER_COLOR[tier] }} />
-                <span style={{ fontSize: 12, color: 'var(--cream-soft)' }}>{TIER_LABEL[tier]}</span>
-              </div>
-            ))}
-          </div>
-          <button
-            onClick={() => setHotspotsOn(v => !v)}
-            className="ghost-btn hotspot-toggle"
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8, width: '100%', marginTop: 14,
-              background: hotspotsOn ? 'rgba(111,147,160,0.2)' : 'rgba(255,255,255,0.04)',
-              borderColor: hotspotsOn ? 'var(--lavender)' : 'rgba(255,255,255,0.08)',
-              color: 'var(--cream)', fontSize: 12, fontWeight: 600,
-              padding: '10px 12px', borderRadius: 10,
-            }}
-          >
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#6f93a0', flexShrink: 0 }} />
-            {hotspotsOn ? 'Hide' : 'Show'} risk hotspot corridors
-            {clusters.length > 0 && (
-              <span className="font-mono" style={{ marginLeft: 'auto', color: 'var(--cream-soft)', fontWeight: 500 }}>{clusters.length}</span>
-            )}
-          </button>
-          <a
-            href="/top-at-risk"
-            target="_blank"
-            rel="noreferrer"
-            className="top-link"
-            style={{
-              display: 'block', marginTop: 12, fontSize: 11.5, fontWeight: 600,
-              color: 'var(--lavender)', textDecoration: 'none', letterSpacing: '0.02em',
-            }}
-          >
-            View shareable Top 10 <span className="top-link-arrow">→</span>
-          </a>
-        </div>
-      </div>
-
-      {/* Dossier — slides in from the right as a floating drawer, leaving the map visible underneath */}
-      <div className={`dossier-drawer paper-scroll${selected ? ' open' : ''}`} style={{
-        position: 'absolute', top: 16, right: 16, bottom: 16, width: DRAWER_WIDTH,
-        background: 'var(--paper)', overflowY: 'auto',
-        borderRadius: 22, boxShadow: '0 24px 70px rgba(0,0,0,0.55)',
-        zIndex: 3,
-        transform: selected ? 'translateX(0)' : `translateX(calc(100% + 32px))`,
-        transition: 'transform 0.4s cubic-bezier(.2,.8,.2,1)',
-      }}>
-        {selected && (
-          <>
-            <div className="folder-tab no-print">
-              {selected.account_id ? `File No. ${selected.account_id}` : 'Case File'}
-            </div>
-
-            <div id="dossier-print-root" style={{ padding: '18px 32px 48px', position: 'relative' }}>
-              <div className="no-print" style={{ position: 'absolute', top: -30, right: 32, display: 'flex', gap: 8 }}>
-                {brief && !brief.error && (
+              ))}
+              {businesses.map(b => {
+                const isSelected = selected && selected.name === b.name
+                return (
                   <button
-                    onClick={() => window.print()}
-                    className="ghost-btn"
+                    key={`${b.name}-${b.address}`}
+                    onClick={() => selectBusiness(b)}
+                    className="biz-row"
                     style={{
-                      background: 'var(--paper)', color: 'var(--ink)',
-                      fontWeight: 700, fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase',
-                      padding: '7px 12px', borderRadius: 4,
-                    }}
-                  >
-                    Print Brief
-                  </button>
-                )}
-                <button
-                  onClick={() => { setSelected(null); setBrief(null); setPhotoOpen(false) }}
-                  className="solid-btn"
-                  style={{
-                    background: 'var(--stamp-red)', border: 'none', cursor: 'pointer',
-                    color: 'var(--cream)', fontWeight: 700, fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase',
-                    padding: '7px 12px', borderRadius: 4,
-                  }}
-                >
-                  Close
-                </button>
-              </div>
-
-              <div style={{ display: 'flex', gap: 22, alignItems: 'center' }}>
-                {selected.name && (
-                  <button
-                    className="no-print photo-thumb"
-                    onClick={() => setPhotoOpen(true)}
-                    aria-label="Enlarge photo"
-                    style={{
-                      width: 118, height: 118, flexShrink: 0, padding: 0, cursor: 'zoom-in',
-                      border: '5px solid #fff8ea', boxShadow: '0 8px 18px rgba(0,0,0,0.35)',
-                      transform: 'rotate(-3deg)', background: 'none',
+                      display: 'flex', alignItems: 'center', gap: 12, width: 'calc(100% - 16px)', textAlign: 'left',
+                      margin: '2px 8px',
+                      background: isSelected ? 'rgba(111,147,160,0.18)' : 'transparent',
+                      color: 'var(--cream)', font: 'inherit',
+                      border: 'none', borderRadius: 12,
+                      cursor: 'pointer', padding: '9px 10px',
+                      opacity: selected && !isSelected ? 0.42 : 1,
+                      transition: 'opacity 0.2s ease, background 0.15s ease, transform 0.15s ease',
                     }}
                   >
                     <img
-                      src={photoUrl(selected.name, 300)}
+                      src={photoUrl(b.name, 96)}
                       alt=""
-                      onError={e => { e.target.closest('button').style.visibility = 'hidden' }}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                      loading="lazy"
+                      onError={e => { e.target.style.visibility = 'hidden' }}
+                      onLoad={e => { e.target.style.opacity = 1 }}
+                      style={{ width: 42, height: 42, objectFit: 'cover', borderRadius: 10, flexShrink: 0, background: 'var(--paper-dim)', opacity: 0 }}
                     />
-                  </button>
-                )}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="font-display" style={{ fontSize: 30, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.15 }}>
-                    {selected.name}
-                  </div>
-                  <div style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 6 }}>{selected.address}</div>
-                </div>
-              </div>
-
-              <div style={{
-                marginTop: 22, paddingBottom: 18, borderBottom: `2px solid ${TIER_COLOR[selected.risk_tier]}`,
-                display: 'flex', alignItems: 'center', gap: 18,
-              }}>
-                <div className="risk-stamp" style={{ color: TIER_COLOR[selected.risk_tier] }}>
-                  <span className="font-display" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1 }}>
-                    {Math.round(selected.risk_score)}
-                  </span>
-                  <span className="risk-stamp-tier">{selected.risk_tier} risk</span>
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--ink-soft)', lineHeight: 1.55 }}>
-                  Succession risk score, out of 100 — based on the structural and behavioral signals filed below.
-                </div>
-              </div>
-
-              {briefLoading && (
-                <div style={{ marginTop: 22, fontSize: 13, fontStyle: 'italic', color: 'var(--ink-soft)' }}>
-                  Compiling dossier…
-                </div>
-              )}
-
-              {brief && !brief.error && (
-                <>
-                  <p className="font-display" style={{ fontSize: 17, lineHeight: 1.6, marginTop: 22, color: 'var(--ink)' }}>
-                    {brief.summary}
-                  </p>
-
-                  {brief.next_steps && Object.keys(brief.next_steps).length > 0 && (
-                    <div style={{ marginTop: 28 }}>
-                      <div style={label}>Tailored Next Steps</div>
-                      <div style={{ marginTop: 12 }}>
-                        {Object.entries(brief.next_steps).map(([audience, text]) => (
-                          <div key={audience} style={{ padding: '11px 0', borderTop: '1px solid var(--rule)' }}>
-                            <div style={{ fontSize: 10.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--lavender)', fontWeight: 700 }}>
-                              {audience}
-                            </div>
-                            <div style={{ fontSize: 13, color: 'var(--ink)', marginTop: 4, lineHeight: 1.5 }}>{text}</div>
-                          </div>
-                        ))}
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div className="ledger-row">
+                        <span style={{
+                          fontSize: 13, fontWeight: 600, color: '#fbf9f4', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 1,
+                        }}>{b.name}</span>
+                        <span className="ledger-leader" />
+                        <span className={`tier-badge tier-badge-${b.risk_tier}`}>
+                          <span className="font-mono">{Math.round(b.risk_score)}</span>
+                        </span>
                       </div>
+                      <div style={{ fontSize: 11, color: 'var(--cream-soft)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.address}</div>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+
+            <div style={{ padding: '14px 20px', flexShrink: 0, borderTop: '1px solid rgba(233,214,173,0.1)' }}>
+              <div style={{ display: 'flex', gap: 16 }}>
+                {['high', 'medium', 'low'].map(tier => (
+                  <div key={tier} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: TIER_COLOR[tier] }} />
+                    <span style={{ fontSize: 12, color: 'var(--cream-soft)' }}>{TIER_LABEL[tier]}</span>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={() => setHotspotsOn(v => !v)}
+                className="ghost-btn hotspot-toggle"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, width: '100%', marginTop: 14,
+                  background: hotspotsOn ? 'rgba(111,147,160,0.2)' : 'rgba(255,255,255,0.04)',
+                  borderColor: hotspotsOn ? 'var(--lavender)' : 'rgba(255,255,255,0.08)',
+                  color: 'var(--cream)', fontSize: 12, fontWeight: 600,
+                  padding: '10px 12px', borderRadius: 10,
+                }}
+              >
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#6f93a0', flexShrink: 0 }} />
+                {hotspotsOn ? 'Hide' : 'Show'} risk hotspot corridors
+                {clusters.length > 0 && (
+                  <span className="font-mono" style={{ marginLeft: 'auto', color: 'var(--cream-soft)', fontWeight: 500 }}>{clusters.length}</span>
+                )}
+              </button>
+              <button
+                onClick={() => {
+                  setCohortPanelOpen(v => {
+                    if (v) setSelectedCohort(null)
+                    return !v
+                  })
+                  setSelectedCluster(null)
+                }}
+                className="ghost-btn hotspot-toggle"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, width: '100%', marginTop: 8,
+                  background: cohortPanelOpen ? 'rgba(201,143,79,0.2)' : 'rgba(255,255,255,0.04)',
+                  borderColor: cohortPanelOpen ? COHORT_ACCENT : 'rgba(255,255,255,0.08)',
+                  color: 'var(--cream)', fontSize: 12, fontWeight: 600,
+                  padding: '10px 12px', borderRadius: 10,
+                }}
+              >
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: COHORT_ACCENT, flexShrink: 0 }} />
+                {cohortPanelOpen ? 'Hide' : 'View'} risk by community
+              </button>
+              <a
+                href="/top-at-risk"
+                target="_blank"
+                rel="noreferrer"
+                className="top-link"
+                style={{
+                  display: 'block', marginTop: 12, fontSize: 11.5, fontWeight: 600,
+                  color: 'var(--lavender)', textDecoration: 'none', letterSpacing: '0.02em',
+                }}
+              >
+                View shareable Top 10 <span className="top-link-arrow">→</span>
+              </a>
+            </div>
+          </div>
+        </div>
+
+        {/* MAP CANVAS — pin clusters/hotspot corridors render inside this column;
+            the timelapse strip and popups float within it, never over the side panels */}
+        <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
+          <div ref={mapEl} className="no-print" style={{ position: 'absolute', inset: 0 }} />
+
+          {/* Timelapse — a forward-looking scenario scrub bar, not a forecast.
+              Scrubbing/playing recolors businesses-circles via the combined
+              repaint effect above; a closed dot fades out completely. */}
+          <div className="no-print glass-card" style={{
+            position: 'absolute', bottom: 16, left: 16, right: 16, zIndex: 2,
+            color: 'var(--cream)', padding: '12px 18px',
+          }}>
+            <div style={{ fontSize: 11, color: 'var(--cream-soft)', lineHeight: 1.4, marginBottom: 10 }}>
+              Each dot is a real Fremont restaurant. The longer it sits without a succession plan, the likelier it is to close —
+              press play to watch how many could disappear over the next {TIMELAPSE_HORIZON_YEARS} years if nothing changes.
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <button
+                onClick={() => {
+                  if (timelapseYear >= TIMELAPSE_END_YEAR) setTimelapseYear(TIMELAPSE_START_YEAR)
+                  setTimelapsePlaying(v => !v)
+                }}
+                className="ghost-btn"
+                style={{
+                  width: 30, height: 30, borderRadius: '50%', display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', color: 'var(--cream)', fontSize: 12, padding: 0, flexShrink: 0,
+                }}
+                aria-label={timelapsePlaying ? 'Pause' : 'Play'}
+              >
+                {timelapsePlaying ? '❚❚' : '▶'}
+              </button>
+
+              <button
+                onClick={() => { setTimelapsePlaying(false); setTimelapseYear(TIMELAPSE_START_YEAR) }}
+                className="ghost-btn"
+                disabled={timelapseYear === TIMELAPSE_START_YEAR && !timelapsePlaying}
+                style={{
+                  width: 30, height: 30, borderRadius: '50%', display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', color: 'var(--cream)', fontSize: 13, padding: 0, flexShrink: 0,
+                  opacity: timelapseYear === TIMELAPSE_START_YEAR && !timelapsePlaying ? 0.35 : 1,
+                  cursor: timelapseYear === TIMELAPSE_START_YEAR && !timelapsePlaying ? 'default' : 'pointer',
+                }}
+                aria-label="Reset timelapse"
+              >
+                ↺
+              </button>
+
+              <div style={{ flexShrink: 0 }}>
+                <div style={label}>Timelapse</div>
+                <div className="font-display" style={{ fontSize: 13.5, fontWeight: 600, marginTop: 1, color: 'var(--cream)', whiteSpace: 'nowrap' }}>
+                  {timelapseClosedCount > 0
+                    ? `${timelapseClosedCount} gone`
+                    : `Fremont`}
+                </div>
+              </div>
+
+              <input
+                type="range"
+                min={TIMELAPSE_START_YEAR}
+                max={TIMELAPSE_END_YEAR}
+                step={1}
+                value={timelapseYear}
+                onChange={e => { setTimelapsePlaying(false); setTimelapseYear(Number(e.target.value)) }}
+                style={{ flex: 1, accentColor: COHORT_ACCENT }}
+              />
+
+              <span className="font-mono" style={{ fontSize: 20, fontWeight: 700, color: COHORT_ACCENT, minWidth: 40, textAlign: 'right', flexShrink: 0 }}>
+                {timelapseYear}
+              </span>
+            </div>
+          </div>
+
+          {/* Risk hotspot cluster popup */}
+          {!selected && selectedCluster && (
+            <div className="no-print fade-up" style={{
+              position: 'absolute', right: 16, bottom: 132, width: 340, maxHeight: '55%',
+              background: 'var(--paper)', borderRadius: 20, boxShadow: '0 24px 70px rgba(0,0,0,0.55)',
+              zIndex: 3, display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            }}>
+              <div style={{ padding: '16px 18px', borderBottom: '2px solid var(--lavender)', flexShrink: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={label}>Risk Hotspot Corridor</div>
+                    <div className="font-display" style={{ fontSize: 20, fontWeight: 600, marginTop: 4 }}>
+                      {selectedCluster.business_count} businesses
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setSelectedCluster(null)}
+                    className="ghost-btn"
+                    style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '5px 9px', borderRadius: 6 }}
+                  >
+                    Close
+                  </button>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 8, lineHeight: 1.5 }}>
+                  Avg risk score {selectedCluster.avg_risk_score} · an estimated {selectedCluster.estimated_jobs_at_risk} jobs
+                  and ${(selectedCluster.estimated_annual_revenue_at_risk / 1_000_000).toFixed(1)}M/yr concentrated within a short walk.
+                </div>
+              </div>
+              <div className="paper-scroll" style={{ overflowY: 'auto', padding: '4px 18px' }}>
+                {selectedCluster.businesses.map(b => (
+                  <div key={`${b.name}-${b.address}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '9px 0', borderTop: '1px solid var(--rule)' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.name}</div>
+                      <div style={{ fontSize: 10.5, color: 'var(--ink-soft)', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.address}</div>
+                    </div>
+                    <div className="font-mono" style={{ fontSize: 13, fontWeight: 700, color: TIER_COLOR.high, flexShrink: 0 }}>{Math.round(b.risk_score)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Community lens — risk grouped by cuisine/community lineage instead
+              of geography. Clicking a row highlights that cohort on the map
+              (see the selectedCohort paint effect) and surfaces the headline
+              stat that a flat citywide count hides. */}
+          {!selected && !selectedCluster && cohortPanelOpen && (
+            <div className="no-print fade-up" style={{
+              position: 'absolute', right: 16, bottom: 132, width: 340, maxHeight: '55%',
+              background: 'var(--paper)', borderRadius: 20, boxShadow: '0 24px 70px rgba(0,0,0,0.55)',
+              zIndex: 3, display: 'flex', flexDirection: 'column', overflow: 'hidden',
+            }}>
+              <div style={{ padding: '16px 18px', borderBottom: `2px solid ${COHORT_ACCENT}`, flexShrink: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={label}>Risk By Community</div>
+                    <div className="font-display" style={{ fontSize: 18, fontWeight: 600, marginTop: 4 }}>
+                      Cuisine / community lineage
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => { setCohortPanelOpen(false); setSelectedCohort(null) }}
+                    className="ghost-btn"
+                    style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '5px 9px', borderRadius: 6 }}
+                  >
+                    Close
+                  </button>
+                </div>
+                {selectedCohort ? (() => {
+                  const c = cohorts.find(x => x.cohort === selectedCohort)
+                  if (!c) return null
+                  return (
+                    <div style={{ fontSize: 12.5, color: 'var(--ink)', marginTop: 8, lineHeight: 1.5, fontWeight: 600 }}>
+                      {c.pct_high_risk}% of Fremont's {c.cohort} restaurants are high-risk
+                      <span style={{ fontWeight: 400, color: 'var(--ink-soft)' }}> ({c.high_risk_count} of {c.business_count}{citywidePctHigh != null && ` — vs ${citywidePctHigh}% citywide`})</span>
+                    </div>
+                  )
+                })() : (
+                  <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 8, lineHeight: 1.5 }}>
+                    Inferred from business names — a coarse lens, not a census. Tap a row to light it up on the map.
+                  </div>
+                )}
+              </div>
+              <div className="paper-scroll" style={{ overflowY: 'auto', padding: '4px 18px' }}>
+                {cohorts.map(c => {
+                  const isSelected = selectedCohort === c.cohort
+                  return (
+                    <button
+                      key={c.cohort}
+                      onClick={() => setSelectedCohort(v => v === c.cohort ? null : c.cohort)}
+                      style={{
+                        display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none',
+                        cursor: 'pointer', padding: '9px 0', borderTop: '1px solid var(--rule)', font: 'inherit',
+                        opacity: selectedCohort && !isSelected ? 0.45 : 1,
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                        <span style={{ fontSize: 12.5, fontWeight: isSelected ? 700 : 600, color: 'var(--ink)' }}>
+                          {c.cohort}{c.small_sample && <span style={{ fontWeight: 400, color: 'var(--ink-soft)' }}> (small sample)</span>}
+                        </span>
+                        <span className="font-mono" style={{ fontSize: 12.5, fontWeight: 700, color: COHORT_ACCENT, flexShrink: 0 }}>
+                          {c.pct_high_risk}%
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: 'var(--ink-soft)', marginTop: 2 }}>
+                        <span>{c.business_count} businesses</span>
+                        <span>{c.high_risk_count} high-risk</span>
+                      </div>
+                      <div style={{ height: 3, background: 'var(--paper-dim)', marginTop: 5 }}>
+                        <div style={{ height: '100%', width: `${c.pct_high_risk}%`, background: COHORT_ACCENT }} />
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT DRAWER — slides open as a real column, so the map canvas
+            actually narrows to make room rather than the drawer floating
+            over it. Content stays a fixed width so it doesn't reflow mid-animation. */}
+        <div className={`dossier-drawer paper-scroll${selected ? ' open' : ''}`} style={{
+          width: selected ? DRAWER_WIDTH : 0, flexShrink: 0, overflow: 'hidden',
+          background: 'var(--paper)', transition: 'width 0.3s cubic-bezier(.2,.8,.2,1)',
+          borderLeft: selected ? '1px solid var(--rule)' : 'none',
+        }}>
+          <div style={{ width: DRAWER_WIDTH, height: '100%', overflowY: 'auto' }}>
+            {selected && (
+              <>
+                <div className="folder-tab no-print">
+                  {selected.account_id ? `File No. ${selected.account_id}` : 'Case File'}
+                </div>
+
+                <div id="dossier-print-root" style={{ padding: '18px 32px 48px', position: 'relative' }}>
+                  <div className="no-print" style={{ position: 'absolute', top: -30, right: 32, display: 'flex', gap: 8 }}>
+                    {brief && !brief.error && (
+                      <button
+                        onClick={() => window.print()}
+                        className="ghost-btn"
+                        style={{
+                          background: 'var(--paper)', color: 'var(--ink)',
+                          fontWeight: 700, fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase',
+                          padding: '7px 12px', borderRadius: 4,
+                        }}
+                      >
+                        Print Brief
+                      </button>
+                    )}
+                    <button
+                      onClick={() => { setSelected(null); setBrief(null); setPhotoOpen(false) }}
+                      className="solid-btn"
+                      style={{
+                        background: 'var(--stamp-red)', border: 'none', cursor: 'pointer',
+                        color: 'var(--cream)', fontWeight: 700, fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase',
+                        padding: '7px 12px', borderRadius: 4,
+                      }}
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 22, alignItems: 'center' }}>
+                    {selected.name && (
+                      <button
+                        className="no-print photo-thumb"
+                        onClick={() => setPhotoOpen(true)}
+                        aria-label="Enlarge photo"
+                        style={{
+                          width: 118, height: 118, flexShrink: 0, padding: 0, cursor: 'zoom-in',
+                          border: '5px solid #fff8ea', boxShadow: '0 8px 18px rgba(0,0,0,0.35)',
+                          transform: 'rotate(-3deg)', background: 'none',
+                        }}
+                      >
+                        <img
+                          src={photoUrl(selected.name, 300)}
+                          alt=""
+                          onError={e => { e.target.closest('button').style.visibility = 'hidden' }}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                        />
+                      </button>
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="font-display" style={{ fontSize: 30, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.15 }}>
+                        {selected.name}
+                      </div>
+                      <div style={{ fontSize: 13, color: 'var(--ink-soft)', marginTop: 6 }}>{selected.address}</div>
+                    </div>
+                  </div>
+
+                  <div style={{
+                    marginTop: 22, paddingBottom: 18, borderBottom: `2px solid ${TIER_COLOR[selected.risk_tier]}`,
+                    display: 'flex', alignItems: 'center', gap: 18,
+                  }}>
+                    <div className="risk-stamp" style={{ color: TIER_COLOR[selected.risk_tier] }}>
+                      <span className="font-display" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1 }}>
+                        {Math.round(selected.risk_score)}
+                      </span>
+                      <span className="risk-stamp-tier">{selected.risk_tier} risk</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--ink-soft)', lineHeight: 1.55 }}>
+                      Succession risk score, out of 100 — based on the structural and behavioral signals filed below.
+                    </div>
+                  </div>
+
+                  {briefLoading && (
+                    <div style={{ marginTop: 22, fontSize: 13, fontStyle: 'italic', color: 'var(--ink-soft)' }}>
+                      Compiling dossier…
                     </div>
                   )}
 
-                  <div style={{ marginTop: 30 }}>
-                    <div style={label}>Signals</div>
-                    <div style={{ marginTop: 12 }}>
-                      {Object.entries(brief.signals).map(([name, value]) => (
-                        <SignalBar key={name} name={name} value={value} />
-                      ))}
+                  {brief && !brief.error && (
+                    <>
+                      <p className="font-display" style={{ fontSize: 17, lineHeight: 1.6, marginTop: 22, color: 'var(--ink)' }}>
+                        {brief.summary}
+                      </p>
+
+                      {brief.next_steps && Object.keys(brief.next_steps).length > 0 && (
+                        <div style={{ marginTop: 28 }}>
+                          <div style={label}>Tailored Next Steps</div>
+                          <div style={{ marginTop: 12 }}>
+                            {Object.entries(brief.next_steps).map(([audience, text]) => (
+                              <div key={audience} style={{ padding: '11px 0', borderTop: '1px solid var(--rule)' }}>
+                                <div style={{ fontSize: 10.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--lavender)', fontWeight: 700 }}>
+                                  {audience}
+                                </div>
+                                <div style={{ fontSize: 13, color: 'var(--ink)', marginTop: 4, lineHeight: 1.5 }}>{text}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div style={{ marginTop: 30 }}>
+                        <div style={label}>Signals</div>
+                        <div style={{ marginTop: 12 }}>
+                          {Object.entries(brief.signals).map(([name, value]) => (
+                            <SignalBar key={name} name={name} value={value} />
+                          ))}
+                        </div>
+                      </div>
+
+                      <div style={{ marginTop: 30 }}>
+                        <div style={label}>Resources</div>
+                        <div style={{ marginTop: 12 }}>
+                          {brief.resources.map(r => (
+                            <a
+                              key={r.name}
+                              href={r.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{
+                                display: 'block', textDecoration: 'none', color: 'inherit',
+                                padding: '10px 0', borderTop: '1px solid var(--rule)',
+                              }}
+                            >
+                              <div style={{ fontSize: 13, fontWeight: 600 }}>{r.name}</div>
+                              <div style={{ fontSize: 11, fontStyle: 'italic', color: 'var(--ink-soft)', marginTop: 2 }}>{r.org}</div>
+                              <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', marginTop: 4, lineHeight: 1.4 }}>{r.description}</div>
+                              <div style={{ fontSize: 10.5, letterSpacing: '0.06em', textTransform: 'uppercase', marginTop: 5, color: 'var(--lavender)', fontWeight: 700 }}>Visit →</div>
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+
+                      {selected.name && <CommentSection businessName={selected.name} />}
+                    </>
+                  )}
+
+                  {brief && brief.error && (
+                    <div style={{ marginTop: 22, fontSize: 13, color: 'var(--ink-soft)' }}>
+                      Dossier unavailable for this record.
                     </div>
-                  </div>
-
-                  <div style={{ marginTop: 30 }}>
-                    <div style={label}>Resources</div>
-                    <div style={{ marginTop: 12 }}>
-                      {brief.resources.map(r => (
-                        <a
-                          key={r.name}
-                          href={r.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{
-                            display: 'block', textDecoration: 'none', color: 'inherit',
-                            padding: '10px 0', borderTop: '1px solid var(--rule)',
-                          }}
-                        >
-                          <div style={{ fontSize: 13, fontWeight: 600 }}>{r.name}</div>
-                          <div style={{ fontSize: 11, fontStyle: 'italic', color: 'var(--ink-soft)', marginTop: 2 }}>{r.org}</div>
-                          <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', marginTop: 4, lineHeight: 1.4 }}>{r.description}</div>
-                          <div style={{ fontSize: 10.5, letterSpacing: '0.06em', textTransform: 'uppercase', marginTop: 5, color: 'var(--lavender)', fontWeight: 700 }}>Visit →</div>
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-
-                  {selected.name && <CommentSection businessName={selected.name} />}
-                </>
-              )}
-
-              {brief && brief.error && (
-                <div style={{ marginTop: 22, fontSize: 13, color: 'var(--ink-soft)' }}>
-                  Dossier unavailable for this record.
+                  )}
                 </div>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* Risk hotspot cluster popup — floats bottom-right, clear of the sidebar */}
-      {!selected && selectedCluster && (
-        <div className="no-print fade-up" style={{
-          position: 'absolute', right: 16, bottom: 16, width: 340, maxHeight: '60%',
-          background: 'var(--paper)', borderRadius: 20, boxShadow: '0 24px 70px rgba(0,0,0,0.55)',
-          zIndex: 3, display: 'flex', flexDirection: 'column', overflow: 'hidden',
-        }}>
-          <div style={{ padding: '16px 18px', borderBottom: '2px solid var(--lavender)', flexShrink: 0 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <div style={label}>Risk Hotspot Corridor</div>
-                <div className="font-display" style={{ fontSize: 20, fontWeight: 600, marginTop: 4 }}>
-                  {selectedCluster.business_count} businesses
-                </div>
-              </div>
-              <button
-                onClick={() => setSelectedCluster(null)}
-                className="ghost-btn"
-                style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '5px 9px', borderRadius: 6 }}
-              >
-                Close
-              </button>
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--ink-soft)', marginTop: 8, lineHeight: 1.5 }}>
-              Avg risk score {selectedCluster.avg_risk_score} · an estimated {selectedCluster.estimated_jobs_at_risk} jobs
-              and ${(selectedCluster.estimated_annual_revenue_at_risk / 1_000_000).toFixed(1)}M/yr concentrated within a short walk.
-            </div>
-          </div>
-          <div className="paper-scroll" style={{ overflowY: 'auto', padding: '4px 18px' }}>
-            {selectedCluster.businesses.map(b => (
-              <div key={`${b.name}-${b.address}`} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '9px 0', borderTop: '1px solid var(--rule)' }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.name}</div>
-                  <div style={{ fontSize: 10.5, color: 'var(--ink-soft)', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.address}</div>
-                </div>
-                <div className="font-mono" style={{ fontSize: 13, fontWeight: 700, color: TIER_COLOR.high, flexShrink: 0 }}>{Math.round(b.risk_score)}</div>
-              </div>
-            ))}
+              </>
+            )}
           </div>
         </div>
-      )}
+      </div>
 
       {/* Photo lightbox — click the dossier's rotated photo to enlarge it */}
       {photoOpen && selected?.name && (

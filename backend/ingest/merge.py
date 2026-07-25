@@ -2,6 +2,7 @@ import pandas as pd
 from pathlib import Path
 from . import business_licenses, property_records, sba_loans, google_places, website_staleness
 from .chains import is_chain
+from .cuisine_cohorts import classify_cohort
 from .review_snapshots import save_snapshot, get_prior_counts
 from .closure_check import filter_closed
 from .matching import match_businesses
@@ -106,6 +107,8 @@ def run() -> pd.DataFrame:
     # search. Slower (one call per business) but catches closures the two
     # cheaper checks above miss.
     full = filter_closed(full)
+
+    full["cuisine_cohort"] = full["name"].apply(classify_cohort)
 
     full.to_csv(PROCESSED_DIR / "full_merged.csv", index=False)
     return full

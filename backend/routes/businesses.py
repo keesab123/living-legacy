@@ -8,6 +8,9 @@ import re
 import httpx
 import pandas as pd
 from scoring.risk_scorer import run as score_run
+from scoring.next_steps import SIGNAL_INFO
+from scoring.impact_estimate import estimate_impact
+from scoring.risk_clusters import find_risk_clusters
 from config import require
 
 router = APIRouter()
@@ -68,6 +71,7 @@ class BusinessSummary(BaseModel):
     lng: Optional[float]
     risk_score: float
     risk_tier: str
+    cuisine_cohort: Optional[str] = None
 
 
 class BusinessDetail(BusinessSummary):
@@ -112,7 +116,7 @@ def list_businesses(
     if tier:
         df = df[df["risk_tier"] == tier]
     df = df.head(limit)
-    records = df[["name", "address", "lat", "lng", "risk_score", "risk_tier"]].to_dict(orient="records")
+    records = df[["name", "address", "lat", "lng", "risk_score", "risk_tier", "cuisine_cohort"]].to_dict(orient="records")
     return [{k: (None if isinstance(v, float) and (v != v or v == float('inf') or v == float('-inf')) else v) for k, v in r.items()} for r in records]
 
 
@@ -225,14 +229,38 @@ def get_resources():
     return RESOURCES
 
 
-# Small independent restaurants aren't individually reported to any public
-# revenue/employment database, so there's no per-business figure to sum.
-# These are national small-independent-restaurant averages (National
-# Restaurant Association / industry benchmarks: ~$250K-$1M annual revenue,
-# under 50 employees for independents) used only to give judges/officials a
-# ballpark of what's at stake — not a precise measurement.
-EST_ANNUAL_REVENUE_PER_RESTAURANT = 500_000
-EST_JOBS_PER_RESTAURANT = 12
+def _top_reason(row: pd.Series) -> str:
+    elevated = [
+        (col, row.get(col)) for col in SIGNAL_INFO
+        if pd.notna(row.get(col)) and row.get(col) >= 0.5
+    ]
+    if not elevated:
+        return "elevated overall succession risk"
+    top_col = max(elevated, key=lambda c: c[1])[0]
+    return SIGNAL_INFO[top_col]["label"]
+
+
+@router.get("/top-at-risk")
+def get_top_at_risk(limit: int = Query(10, le=25)):
+    """A standalone, shareable ranked list — not the exploratory map, a
+    single artifact meant to be screenshotted, printed, or handed to a
+    reporter/council member: the businesses actually most at risk, right now."""
+    df = load_scored()
+    top = df.sort_values("risk_score", ascending=False).head(limit)
+    return {
+        "generated_at": pd.Timestamp.now().strftime("%B %d, %Y"),
+        "businesses": [
+            {
+                "name": row["name"],
+                "address": row["address"],
+                "risk_score": row["risk_score"],
+                "risk_tier": row["risk_tier"],
+                "years_in_operation": row["years_in_operation"] if pd.notna(row.get("years_in_operation")) else None,
+                "reason": _top_reason(row),
+            }
+            for _, row in top.iterrows()
+        ],
+    }
 
 
 @router.get("/stats")
@@ -244,14 +272,56 @@ def get_stats():
         "high_risk_count": len(high),
         "medium_risk_count": len(df[df["risk_tier"] == "medium"]),
         "low_risk_count": len(df[df["risk_tier"] == "low"]),
-        "estimated_jobs_at_risk": len(high) * EST_JOBS_PER_RESTAURANT,
-        "estimated_annual_revenue_at_risk": len(high) * EST_ANNUAL_REVENUE_PER_RESTAURANT,
+        **estimate_impact(len(high)),
         "estimate_methodology": (
             "Jobs and revenue are estimated using national small-independent-restaurant "
             "averages (~$500K annual revenue, ~12 employees), not per-business reported "
             "figures, and are meant as an order-of-magnitude civic-impact indicator."
         ),
     }
+
+
+@router.get("/cohorts")
+def get_cohorts():
+    """Risk grouped by community/cuisine lineage instead of geography — a
+    different lens than the map. Fremont's immigrant-owned restaurant scene
+    isn't evenly distributed risk; some communities are losing a much larger
+    share of their businesses than others, and that's invisible in a flat
+    citywide count. Cohort is inferred from name keywords
+    (ingest/cuisine_cohorts.py) — a maintained heuristic, not ground truth."""
+    df = load_scored()
+    citywide_pct_high = round((df["risk_tier"] == "high").mean() * 100, 1)
+
+    cohorts = []
+    for cohort, group in df.groupby("cuisine_cohort"):
+        high_count = int((group["risk_tier"] == "high").sum())
+        cohorts.append({
+            "cohort": cohort,
+            "business_count": len(group),
+            "high_risk_count": high_count,
+            "medium_risk_count": int((group["risk_tier"] == "medium").sum()),
+            "low_risk_count": int((group["risk_tier"] == "low").sum()),
+            "pct_high_risk": round(high_count / len(group) * 100, 1),
+            "avg_risk_score": round(float(group["risk_score"].mean()), 1),
+            "small_sample": len(group) < 5,
+            "businesses": [
+                {"name": r["name"], "address": r["address"], "risk_score": r["risk_score"], "risk_tier": r["risk_tier"]}
+                for _, r in group.sort_values("risk_score", ascending=False).iterrows()
+            ],
+        })
+
+    cohorts.sort(key=lambda c: c["pct_high_risk"], reverse=True)
+    return {"citywide_pct_high_risk": citywide_pct_high, "cohorts": cohorts}
+
+
+@router.get("/risk-clusters")
+def get_risk_clusters(tier: str = Query("high", description="Risk tier to cluster: high, medium, low")):
+    """Geographic hotspots — corridors where multiple at-risk businesses
+    cluster together, a higher-leverage unit of intervention than a flat
+    per-business list. Computed with real spatial clustering (DBSCAN over
+    haversine distance), not a heuristic."""
+    df = load_scored()
+    return {"tier": tier, "clusters": find_risk_clusters(df, tier=tier)}
 
 
 @router.post("/pipeline/run")

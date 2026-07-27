@@ -1,7 +1,6 @@
 .rocketride/
 .claude/
 backend/.env
-backend/data/
 backend/__pycache__/
 backend/ingest/__pycache__/
 backend/scoring/__pycache__/

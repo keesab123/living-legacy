@@ -1,4 +1,4 @@
-# Keep Fremont Open
+# Living Legacy
 
 An early warning system for immigrant-owned small business succession gaps in Fremont, CA.
 

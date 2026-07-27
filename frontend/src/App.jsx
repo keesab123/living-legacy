@@ -699,7 +699,7 @@ export default function App() {
         borderBottom: '1px solid rgba(233,214,173,0.14)', zIndex: 4, position: 'relative',
       }}>
         <div className="font-display gradient-text" style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--cream)', flexShrink: 0 }}>
-          Keep Fremont Open
+          Living Legacy
         </div>
         <div style={{ ...label, color: 'var(--cream-soft)', flexShrink: 0 }}>Succession Risk Atlas</div>
         <button

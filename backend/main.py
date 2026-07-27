@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routes import businesses, comments
 
-app = FastAPI(title="Handoff API")
+app = FastAPI(title="Living Legacy API")
 
 app.add_middleware(
     CORSMiddleware,

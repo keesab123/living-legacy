@@ -14,14 +14,13 @@ services:
       - key: GOOGLE_SEARCH_ENGINE_ID
         value: $GOOGLE_SEARCH_ENGINE_ID
 
-  - type: web
+  - type: static
     name: living-legacy-frontend
     env: node
     plan: free
     root_dir: frontend
     buildCommand: npm install && npm run build
-    startCommand: npm run preview
-    staticSite: false
+    publishDirectory: dist
     envVars:
       - key: VITE_API_BASE
         value: https://living-legacy-backend.onrender.com/api

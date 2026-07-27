@@ -4,11 +4,10 @@ services:
     env: python
     plan: free
     root_dir: backend
+    pythonVersion: 3.9
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.9
       - key: GOOGLE_API_KEY
         value: $GOOGLE_API_KEY
       - key: GOOGLE_SEARCH_ENGINE_ID

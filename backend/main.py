@@ -22,11 +22,7 @@ async def log_exceptions(request: Request, call_next):
 
 app.add_middleware(
     CORSMiddleware,
-    # Vite falls through to the next free port (5174, 5175, ...) whenever
-    # 5173 is already taken by a stale dev server — a hardcoded single
-    # origin here breaks the whole app with an opaque CORS error instead of
-    # a clear "port in use" message.
-    allow_origin_regex=r"http://localhost:\d+",
+    allow_origin_regex=r"(http://localhost:\d+|https://.*\.onrender\.com)",
     allow_methods=["*"],
     allow_headers=["*"],
 )

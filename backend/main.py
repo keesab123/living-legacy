@@ -4,6 +4,10 @@ from routes import businesses, comments
 
 app = FastAPI(title="Living Legacy API")
 
+@app.get("/")
+def health():
+    return {"status": "ok"}
+
 app.add_middleware(
     CORSMiddleware,
     # Vite falls through to the next free port (5174, 5175, ...) whenever

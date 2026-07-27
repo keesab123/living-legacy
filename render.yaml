@@ -3,7 +3,7 @@ services:
     name: living-legacy-backend
     env: python
     plan: free
-    root_dir: backend
+    rootDir: backend
     pythonVersion: 3.9
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
@@ -17,7 +17,7 @@ services:
     name: living-legacy-frontend
     env: node
     plan: free
-    root_dir: frontend
+    rootDir: frontend
     buildCommand: npm install && npm run build
     startCommand: npx serve -s dist -l $PORT
     envVars:
